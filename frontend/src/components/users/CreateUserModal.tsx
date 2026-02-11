@@ -29,7 +29,7 @@ const createUserSchema = z.object({
   lastName: z.string().min(1, 'El apellido es requerido'),
   email: z.string().min(1, 'El email es requerido').email('Email inválido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
-  role: z.enum(['admin', 'recruiter', 'viewer']),
+  role: z.enum(['super_admin', 'consultant', 'viewer']),
 });
 
 type CreateUserFormData = z.infer<typeof createUserSchema>;
@@ -143,15 +143,15 @@ export function CreateUserModal({ isOpen, onClose, onSubmit, isLoading }: Create
             <Label htmlFor="role">Rol</Label>
             <Select
               value={selectedRole}
-              onValueChange={(value: 'admin' | 'recruiter' | 'viewer') => setValue('role', value)}
+              onValueChange={(value: 'super_admin' | 'consultant' | 'viewer') => setValue('role', value)}
               disabled={isLoading}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Selecciona un rol" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Administrador</SelectItem>
-                <SelectItem value="recruiter">Reclutador</SelectItem>
+                <SelectItem value="super_admin">Super Administrador</SelectItem>
+                <SelectItem value="consultant">Consultor</SelectItem>
                 <SelectItem value="viewer">Visualizador</SelectItem>
               </SelectContent>
             </Select>

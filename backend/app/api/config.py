@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.auth import get_current_user
 from app.models import User, UserRole
 from app.schemas import (
     ConfigurationCreate,
@@ -226,7 +226,7 @@ async def get_raw_config(
     current_user: User = Depends(require_admin)
 ):
     """Obtener configuración cruda (para casos especiales)."""
-    from app.models import ConfigCategory
+    from app.schemas import ConfigCategory
     
     service = ConfigurationService(db)
     config = await service.get(ConfigCategory(category), key)

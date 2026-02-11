@@ -33,14 +33,14 @@ interface UserTableProps {
 }
 
 const roleLabels: Record<string, string> = {
-  admin: 'Administrador',
-  recruiter: 'Reclutador',
+  super_admin: 'Super Administrador',
+  consultant: 'Consultor',
   viewer: 'Visualizador',
 };
 
 const roleVariants: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
-  admin: 'destructive',
-  recruiter: 'default',
+  super_admin: 'destructive',
+  consultant: 'default',
   viewer: 'secondary',
 };
 
@@ -107,7 +107,7 @@ export function UserTable({ users, isLoading, onEdit, onToggleStatus, onDelete }
                 </Badge>
               </TableCell>
               <TableCell>
-                {format(new Date(user.createdAt), 'dd/MM/yyyy', { locale: es })}
+                {format(new Date(user.created_at), 'dd/MM/yyyy', { locale: es })}
               </TableCell>
               <TableCell>
                 <DropdownMenu>

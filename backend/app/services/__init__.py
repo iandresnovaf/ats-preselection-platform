@@ -1,4 +1,7 @@
 """Services."""
 from app.services.user_service import UserService
+from app.services.job_service import JobService
+from app.services.candidate_service import CandidateService
+from app.services.evaluation_service import EvaluationService
 
-__all__ = ["UserService"]
+__all__ = ["UserService", "JobService", "CandidateService", "EvaluationService"]

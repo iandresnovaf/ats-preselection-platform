@@ -77,6 +77,12 @@ class WhatsAppConfig(BaseModel):
         }
 
 
+class ATSProvider(str, Enum):
+    """Proveedores de ATS soportados."""
+    ZOHO = "zoho"
+    ODOO = "odoo"
+
+
 class ZohoConfig(BaseModel):
     """Configuración de Zoho Recruit API."""
     client_id: str
@@ -96,6 +102,28 @@ class ZohoConfig(BaseModel):
                 "client_secret": "client_secret_here",
                 "refresh_token": "refresh_token_here",
                 "redirect_uri": "http://localhost:8000/api/v1/zoho/callback",
+            }
+        }
+
+
+class OdooConfig(BaseModel):
+    """Configuración de Odoo API."""
+    url: str = Field(..., description="URL de la instancia Odoo (ej: https://miempresa.odoo.com)")
+    database: str = Field(..., description="Nombre de la base de datos")
+    username: str = Field(..., description="Email del usuario")
+    api_key: str = Field(..., description="API Key o Password")
+    
+    # Mapeo de campos (Odoo usa modelos diferentes)
+    job_model: str = "hr.job"  # Modelo de puestos de trabajo
+    applicant_model: str = "hr.applicant"  # Modelo de candidatos
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "url": "https://miempresa.odoo.com",
+                "database": "miempresa_prod",
+                "username": "admin@miempresa.com",
+                "api_key": "api_key_o_password",
             }
         }
 
@@ -184,8 +212,10 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    role: Optional[str] = None
     status: Optional[str] = None
 
 
@@ -198,6 +228,20 @@ class UserResponse(UserBase):
     
     class Config:
         from_attributes = True
+    
+    @field_validator('id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
+
+    @field_validator('status', 'role', mode='before')
+    @classmethod
+    def convert_enum_to_str(cls, v):
+        if v is not None and hasattr(v, 'value'):
+            return v.value
+        return v
 
 
 # ============== AUTH SCHEMAS ==============
@@ -222,6 +266,20 @@ class LoginRequest(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str
+    new_password: str = Field(..., min_length=8)
+
+
+class EmailChange(BaseModel):
+    new_email: EmailStr
+    password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
     new_password: str = Field(..., min_length=8)
 
 
@@ -263,6 +321,13 @@ class JobOpeningResponse(JobOpeningBase):
     
     class Config:
         from_attributes = True
+    
+    @field_validator('id', 'assigned_consultant_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
 
 
 # ============== CANDIDATE SCHEMAS ==============
@@ -299,15 +364,30 @@ class CandidateResponse(CandidateBase):
     
     class Config:
         from_attributes = True
-
-
-class CandidateWithEvaluation(CandidateResponse):
-    evaluations: List[Dict[str, Any]] = []
-    latest_score: Optional[float] = None
-    latest_decision: Optional[str] = None
+    
+    @field_validator('id', 'job_opening_id', 'duplicate_of_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
 
 
 # ============== EVALUATION SCHEMAS ==============
+
+class EvaluationCreate(BaseModel):
+    """Crear evaluación (usado internamente)."""
+    candidate_id: str
+    score: float = Field(..., ge=0, le=100)
+    decision: str
+    strengths: Optional[List[str]] = None
+    gaps: Optional[List[str]] = None
+    red_flags: Optional[List[str]] = None
+    evidence: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    prompt_version: Optional[str] = None
+
 
 class EvaluationResponse(BaseModel):
     id: str
@@ -318,13 +398,27 @@ class EvaluationResponse(BaseModel):
     gaps: Optional[List[str]] = None
     red_flags: Optional[List[str]] = None
     evidence: Optional[str] = None
-    llm_provider: str
-    llm_model: str
-    prompt_version: str
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
+    prompt_version: Optional[str] = None
     created_at: datetime
+    evaluation_time_ms: Optional[int] = None
     
     class Config:
         from_attributes = True
+    
+    @field_validator('id', 'candidate_id', mode='before')
+    @classmethod
+    def convert_uuid_to_str(cls, v):
+        if v is not None:
+            return str(v)
+        return v
+
+
+class CandidateWithEvaluation(CandidateResponse):
+    evaluations: List[EvaluationResponse] = []
+    latest_score: Optional[float] = None
+    latest_decision: Optional[str] = None
 
 
 # ============== COMMUNICATION SCHEMAS ==============
@@ -341,6 +435,58 @@ class SendCommunicationRequest(BaseModel):
     candidate_id: str
     template_name: str
     variables: Dict[str, str] = {}
+
+
+# ============== JOB PAGINATION SCHEMAS ==============
+
+class JobListResponse(BaseModel):
+    """Respuesta paginada de ofertas."""
+    items: List[JobOpeningResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class CandidateListResponse(BaseModel):
+    """Respuesta paginada de candidatos."""
+    items: List[CandidateResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class EvaluationListResponse(BaseModel):
+    """Respuesta paginada de evaluaciones."""
+    items: List[EvaluationResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    has_next: bool
+    has_prev: bool
+
+
+# ============== REQUEST SCHEMAS ==============
+
+class ChangeStatusRequest(BaseModel):
+    """Request para cambiar estado."""
+    status: str
+
+
+class EvaluateRequest(BaseModel):
+    """Request para evaluar candidato."""
+    force: bool = False  # Forzar re-evaluación
+
+
+class CloseJobRequest(BaseModel):
+    """Request para cerrar oferta."""
+    reason: Optional[str] = None
 
 
 # ============== RESPONSE SCHEMAS ==============

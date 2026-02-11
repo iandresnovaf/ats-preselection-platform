@@ -8,7 +8,8 @@ import time
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api import config, auth, users, auth, users
+from app.core.rate_limit import RateLimitMiddleware
+from app.api import config, auth, users, jobs, candidates, evaluations
 
 
 @asynccontextmanager
@@ -40,6 +41,13 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
+# Rate Limiting (antes de CORS para proteger todos los endpoints)
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=60,
+    auth_requests_per_minute=5,
+)
+
 # CORS
 origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
 app.add_middleware(
@@ -65,8 +73,9 @@ async def add_process_time_header(request: Request, call_next):
 app.include_router(config.router, prefix="/api/v1")
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(users.router, prefix="/api/v1")
+app.include_router(jobs.router, prefix="/api/v1")
+app.include_router(candidates.router, prefix="/api/v1")
+app.include_router(evaluations.router, prefix="/api/v1")
 
 
 @app.get("/")

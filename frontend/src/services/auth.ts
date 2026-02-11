@@ -57,6 +57,31 @@ class AuthService {
       return false;
     }
   }
+
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.client.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+  }
+
+  async changeEmail(newEmail: string, password: string): Promise<void> {
+    await this.client.post('/auth/change-email', {
+      new_email: newEmail,
+      password: password,
+    });
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    await this.client.post('/auth/forgot-password', { email });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await this.client.post('/auth/reset-password', {
+      token,
+      new_password: newPassword,
+    });
+  }
 }
 
 export const authService = new AuthService();

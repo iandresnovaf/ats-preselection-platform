@@ -40,7 +40,7 @@ export default function UsersPage() {
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    setIsAdmin(currentUser?.role === 'admin');
+    setIsAdmin(currentUser?.role === 'super_admin');
   }, [currentUser]);
 
   // Fetch users
@@ -72,10 +72,8 @@ export default function UsersPage() {
 
   // Toggle status mutation
   const toggleStatusMutation = useMutation({
-    mutationFn: (user: User) => 
-      user.isActive 
-        ? userService.deactivateUser(user.id)
-        : userService.activateUser(user.id),
+    mutationFn: (user: User) =>
+      userService.updateUser(user.id, { isActive: !user.isActive }),
     onSuccess: (_, user) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast({
@@ -179,7 +177,7 @@ export default function UsersPage() {
         </div>
         <Select
           value={filters.role || 'all'}
-          onValueChange={(value) => 
+          onValueChange={(value) =>
             setFilters({ ...filters, role: value === 'all' ? undefined : value })
           }
         >
@@ -188,8 +186,8 @@ export default function UsersPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los roles</SelectItem>
-            <SelectItem value="admin">Administrador</SelectItem>
-            <SelectItem value="recruiter">Reclutador</SelectItem>
+            <SelectItem value="super_admin">Super Administrador</SelectItem>
+            <SelectItem value="consultant">Consultor</SelectItem>
             <SelectItem value="viewer">Visualizador</SelectItem>
           </SelectContent>
         </Select>

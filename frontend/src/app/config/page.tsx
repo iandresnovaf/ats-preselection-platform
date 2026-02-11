@@ -1,15 +1,26 @@
 "use client";
 
+import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SystemStatus } from "./system-status";
 import { WhatsAppConfigForm } from "./whatsapp-config";
-import { ZohoConfigForm } from "./zoho-config";
+import { ATSConfigForm } from "./ats-config";
 import { LLMConfigForm } from "./llm-config";
 import { EmailConfigForm } from "./email-config";
+import { BrandingConfigForm } from "./branding-config";
+import { AccountConfigForm } from "./account-config";
 
-export function ConfigurationDashboard() {
+export default function ConfigurationPage() {
+  return (
+    <ProtectedRoute allowedRoles={["super_admin"]}>
+      <ConfigurationDashboard />
+    </ProtectedRoute>
+  );
+}
+
+function ConfigurationDashboard() {
   const [activeTab, setActiveTab] = useState("status");
 
   return (
@@ -17,15 +28,17 @@ export function ConfigurationDashboard() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Configuración del Sistema</h1>
         <p className="text-muted-foreground mt-2">
-          Gestiona las integraciones con WhatsApp, Zoho, LLM y Email.
+          Gestiona las integraciones con WhatsApp, ATS (Zoho/Odoo), LLM y Email. Solo disponible para Super Administradores.
         </p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto">
+        <TabsList className="grid w-full grid-cols-7 lg:w-auto">
           <TabsTrigger value="status">Estado</TabsTrigger>
+          <TabsTrigger value="account">Mi Cuenta</TabsTrigger>
+          <TabsTrigger value="branding">Marca/Logo</TabsTrigger>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-          <TabsTrigger value="zoho">Zoho</TabsTrigger>
+          <TabsTrigger value="ats">ATS</TabsTrigger>
           <TabsTrigger value="llm">LLM</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
         </TabsList>
@@ -44,6 +57,34 @@ export function ConfigurationDashboard() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="account" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Mi Cuenta</CardTitle>
+              <CardDescription>
+                Gestiona tu contraseña y email de acceso.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <AccountConfigForm />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="branding" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Personalización de Marca</CardTitle>
+              <CardDescription>
+                Configura el logo y nombre de tu empresa para personalizar la experiencia de los candidatos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <BrandingConfigForm />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="whatsapp" className="space-y-4">
           <Card>
             <CardHeader>
@@ -58,16 +99,16 @@ export function ConfigurationDashboard() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="zoho" className="space-y-4">
+        <TabsContent value="ats" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Zoho Recruit API</CardTitle>
+              <CardTitle>Integración con ATS</CardTitle>
               <CardDescription>
-                Configura la integración con Zoho Recruit.
+                Selecciona y configura tu sistema de seguimiento de candidatos (ATS).
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <ZohoConfigForm />
+              <ATSConfigForm />
             </CardContent>
           </Card>
         </TabsContent>

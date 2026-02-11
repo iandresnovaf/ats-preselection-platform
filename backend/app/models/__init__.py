@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Text, ForeignKey, 
-    Float, JSON, Enum as SQLEnum, UniqueConstraint
+    Float, Numeric, JSON, Enum as SQLEnum, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -72,122 +72,10 @@ class Configuration(Base):
     )
 
 
-class JobOpening(Base):
-    """Oferta laboral."""
-    __tablename__ = "job_openings"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    title = Column(String(255), nullable=False)
-    description = Column(Text)  # Job Description (JD)
-    department = Column(String(100))
-    location = Column(String(255))
-    seniority = Column(String(50))
-    sector = Column(String(100))
-    
-    # Relación con consultor
-    assigned_consultant_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
-    assigned_consultant = relationship("User", back_populates="assigned_jobs")
-    
-    # Zoho integration
-    zoho_job_id = Column(String(100))
-    
-    # Estado
-    is_active = Column(Boolean, default=True)
-    status = Column(String(50), default="draft")  # draft, published, closed
-    
-    # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relations
-    candidates = relationship("Candidate", back_populates="job_opening")
-
-
-class CandidateStatus(str, Enum):
-    NEW = "new"
-    IN_REVIEW = "in_review"
-    SHORTLISTED = "shortlisted"
-    INTERVIEW = "interview"
-    DISCARDED = "discarded"
-    HIRED = "hired"
-
-
-class Candidate(Base):
-    """Candidato."""
-    __tablename__ = "candidates"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    
-    # Datos de contacto
-    email = Column(String(255), index=True)
-    phone = Column(String(50), index=True)
-    full_name = Column(String(255))
-    
-    # Normalización para anti-duplicados
-    email_normalized = Column(String(255), index=True)
-    phone_normalized = Column(String(50), index=True)
-    
-    # Datos extraídos del CV
-    raw_data = Column(JSON)  # Datos JSON del CV original
-    extracted_skills = Column(JSON)
-    extracted_experience = Column(JSON)
-    extracted_education = Column(JSON)
-    
-    # Relación
-    job_opening_id = Column(UUID(as_uuid=True), ForeignKey("job_openings.id"))
-    job_opening = relationship("JobOpening", back_populates="candidates")
-    
-    # Estado
-    status = Column(SQLEnum(CandidateStatus), default=CandidateStatus.NEW)
-    
-    # Zoho integration
-    zoho_candidate_id = Column(String(100))
-    
-    # Anti-duplicados
-    duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"))
-    is_duplicate = Column(Boolean, default=False)
-    
-    # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    source = Column(String(50))  # webhook, cron, manual
-    
-    # Relations
-    evaluations = relationship("Evaluation", back_populates="candidate")
-    decisions = relationship("CandidateDecision", back_populates="candidate")
-    communications = relationship("Communication", back_populates="candidate")
-
-
-class Evaluation(Base):
-    """Evaluación de candidato con IA."""
-    __tablename__ = "evaluations"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"))
-    candidate = relationship("Candidate", back_populates="evaluations")
-    
-    # Score y decisión
-    score = Column(Float)  # 0-100
-    decision = Column(String(20))  # PROCEED, REVIEW, REJECT_HARD
-    
-    # Detalles
-    strengths = Column(JSON)
-    gaps = Column(JSON)
-    red_flags = Column(JSON)
-    evidence = Column(Text)  # Fragmentos del CV que justifican el score
-    
-    # IA metadata
-    llm_provider = Column(String(50))
-    llm_model = Column(String(50))
-    prompt_version = Column(String(20))
-    
-    # Filtros duros aplicados
-    hard_filters_passed = Column(Boolean, default=True)
-    hard_filters_failed = Column(JSON)
-    
-    # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    evaluation_time_ms = Column(Integer)
+# Importar modelos modulares (deben definirse después de Base y antes de las relaciones)
+from app.models.job import JobOpening, JobStatus
+from app.models.candidate import Candidate, CandidateStatus
+from app.models.evaluation import Evaluation
 
 
 class CandidateDecision(Base):

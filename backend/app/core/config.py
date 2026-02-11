@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from functools import lru_cache
 from typing import Optional
 import secrets
@@ -18,8 +19,8 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
     
-    # Security
-    SECRET_KEY: str = secrets.token_urlsafe(32)
+    # Security - MUST be set in environment for production
+    SECRET_KEY: str = Field(default_factory=lambda: secrets.token_urlsafe(32), validation_alias="SECRET_KEY")
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7

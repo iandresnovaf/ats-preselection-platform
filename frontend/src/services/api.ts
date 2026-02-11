@@ -1,112 +1,101 @@
-"use client";
-
-import axios, { AxiosInstance, AxiosError } from "axios";
+import axios from "axios";
+import { authService } from "./auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
-class ApiClient {
-  private client: AxiosInstance;
+// Flag para evitar múltiples refresh simultáneos
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
 
-  constructor() {
-    this.client = axios.create({
-      baseURL: API_BASE_URL,
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
-    // Interceptor para agregar token
-    this.client.interceptors.request.use((config) => {
-      const token = localStorage.getItem("access_token");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
-    });
-
-    // Interceptor para manejar errores
-    this.client.interceptors.response.use(
-      (response) => response,
-      (error: AxiosError) => {
-        if (error.response?.status === 401) {
-          localStorage.removeItem("access_token");
-          localStorage.removeItem("refresh_token");
-          window.location.href = "/login";
-        }
-        return Promise.reject(error);
-      }
-    );
-  }
-
-  // Config API
-  async getStatus() {
-    const response = await this.client.get("/config/status");
-    return response.data;
-  }
-
-  // WhatsApp
-  async getWhatsAppConfig() {
-    const response = await this.client.get("/config/whatsapp");
-    return response.data;
-  }
-
-  async saveWhatsAppConfig(config: any) {
-    const response = await this.client.post("/config/whatsapp", config);
-    return response.data;
-  }
-
-  async testWhatsAppConnection() {
-    const response = await this.client.post("/config/whatsapp/test");
-    return response.data;
-  }
-
-  // Zoho
-  async getZohoConfig() {
-    const response = await this.client.get("/config/zoho");
-    return response.data;
-  }
-
-  async saveZohoConfig(config: any) {
-    const response = await this.client.post("/config/zoho", config);
-    return response.data;
-  }
-
-  async testZohoConnection() {
-    const response = await this.client.post("/config/zoho/test");
-    return response.data;
-  }
-
-  // LLM
-  async getLLMConfig() {
-    const response = await this.client.get("/config/llm");
-    return response.data;
-  }
-
-  async saveLLMConfig(config: any) {
-    const response = await this.client.post("/config/llm", config);
-    return response.data;
-  }
-
-  async testLLMConnection() {
-    const response = await this.client.post("/config/llm/test");
-    return response.data;
-  }
-
-  // Email
-  async getEmailConfig() {
-    const response = await this.client.get("/config/email");
-    return response.data;
-  }
-
-  async saveEmailConfig(config: any) {
-    const response = await this.client.post("/config/email", config);
-    return response.data;
-  }
-
-  async testEmailConnection() {
-    const response = await this.client.post("/config/email/test");
-    return response.data;
-  }
+// Helper para suscribirse a un nuevo token
+function subscribeTokenRefresh(callback: (token: string) => void) {
+  refreshSubscribers.push(callback);
 }
 
-export const configApi = new ApiClient();
+// Helper para notificar a todos los suscriptores
+function onTokenRefreshed(token: string) {
+  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers = [];
+}
+
+// Request interceptor to add token
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("access_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Response interceptor to handle errors y refresh automático
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Si es 401 y no hemos intentado refresh aún
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
+      if (isRefreshing) {
+        // Esperar a que termine el refresh en curso
+        return new Promise((resolve) => {
+          subscribeTokenRefresh((token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(api(originalRequest));
+          });
+        });
+      }
+
+      isRefreshing = true;
+
+      try {
+        const refreshToken = localStorage.getItem("refresh_token");
+        if (!refreshToken) {
+          throw new Error("No refresh token");
+        }
+
+        const response = await authService.refreshToken(refreshToken);
+        localStorage.setItem("access_token", response.access_token);
+        localStorage.setItem("refresh_token", response.refresh_token);
+
+        // Notificar a todos los requests en cola
+        onTokenRefreshed(response.access_token);
+
+        // Reintentar el request original
+        originalRequest.headers.Authorization = `Bearer ${response.access_token}`;
+        return api(originalRequest);
+      } catch (refreshError) {
+        // Refresh falló, limpiar todo y redirigir
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+
+        // Solo redirigir si estamos en el cliente
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    // Manejar error 403 (Forbidden)
+    if (error.response?.status === 403) {
+      console.error("Access forbidden:", error.response?.data?.detail);
+      // No redirigir automáticamente, dejar que el componente maneje el error
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+export default api;

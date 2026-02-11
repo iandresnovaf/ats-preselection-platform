@@ -1,13 +1,16 @@
 export interface User {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  role: 'admin' | 'recruiter' | 'viewer';
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  full_name: string;
+  role: 'super_admin' | 'consultant' | 'viewer';
+  status: 'active' | 'inactive' | 'pending';
+  created_at: string;
+  last_login?: string;
+  // Campos computados
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  isActive?: boolean;
 }
 
 export interface LoginCredentials {
@@ -28,14 +31,14 @@ export interface CreateUserData {
   firstName: string;
   lastName: string;
   password: string;
-  role: 'admin' | 'recruiter' | 'viewer';
+  role: 'super_admin' | 'consultant' | 'viewer';
 }
 
 export interface UpdateUserData {
   email?: string;
   firstName?: string;
   lastName?: string;
-  role?: 'admin' | 'recruiter' | 'viewer';
+  role?: 'super_admin' | 'consultant' | 'viewer';
   isActive?: boolean;
 }
 

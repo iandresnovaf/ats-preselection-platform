@@ -5,7 +5,8 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
-from app.models import Configuration, ConfigCategory
+from app.models import Configuration
+from app.schemas import ConfigCategory
 from app.schemas import (
     ConfigurationCreate, 
     ConfigurationUpdate,
