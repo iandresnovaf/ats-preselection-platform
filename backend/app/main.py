@@ -8,7 +8,7 @@ import time
 
 from app.core.config import settings
 from app.core.database import engine, Base
-from app.api import config
+from app.api import config, auth, users, auth, users
 
 
 @asynccontextmanager
@@ -63,6 +63,10 @@ async def add_process_time_header(request: Request, call_next):
 
 # Routers
 app.include_router(config.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(users.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(users.router, prefix="/api/v1")
 
 
 @app.get("/")
