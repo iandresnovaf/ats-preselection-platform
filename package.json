@@ -1,0 +1,22 @@
+{
+  "name": "ats-preselection-platform",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && source venv/bin/activate && uvicorn app.main:app --reload --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "install:backend": "cd backend && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt",
+    "install:frontend": "cd frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && source venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000",
+    "db:migrate": "cd backend && alembic upgrade head",
+    "db:revision": "cd backend && alembic revision --autogenerate",
+    "test": "cd backend && pytest",
+    "lint": "cd backend && flake8 app && cd ../frontend && npm run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
