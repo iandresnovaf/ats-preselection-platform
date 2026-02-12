@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import { CreateJobData, UpdateJobData, JobOpening } from "@/types/jobs";
 import { User } from "@/types/auth";
 import { Button } from "@/components/ui/button";
@@ -15,6 +18,7 @@ import {
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { userService } from "@/services/users";
+import { sanitizeInput, MAX_LENGTHS } from "@/lib/validation";
 
 interface JobFormProps {
   job?: JobOpening;
@@ -63,17 +67,40 @@ const sectors = [
   "Other",
 ];
 
-export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
+// Schema de validación con Zod
+const jobSchema = z.object({
+  title: z.string().min(1, "El título es requerido").max(MAX_LENGTHS.TITLE, "Título demasiado largo"),
+  description: z.string().min(1, "La descripción es requerida").max(MAX_LENGTHS.DESCRIPTION, "Descripción demasiado larga"),
+  department: z.string().min(1, "El departamento es requerido"),
+  location: z.string().min(1, "La ubicación es requerida").max(MAX_LENGTHS.NAME, "Ubicación demasiado larga"),
+  seniority: z.string().min(1, "El nivel de seniority es requerido"),
+  sector: z.string().min(1, "El sector es requerido"),
+  assigned_consultant_id: z.string().optional(),
+});
+
+type JobFormData = z.infer<typeof jobSchema>;
+
+function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
   const [consultants, setConsultants] = useState<User[]>([]);
   const [loadingConsultants, setLoadingConsultants] = useState(false);
-  const [formData, setFormData] = useState<CreateJobData>({
-    title: job?.title || "",
-    description: job?.description || "",
-    department: job?.department || "",
-    location: job?.location || "",
-    seniority: job?.seniority || "",
-    sector: job?.sector || "",
-    assigned_consultant_id: job?.assigned_consultant_id || "",
+  
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<JobFormData>({
+    resolver: zodResolver(jobSchema),
+    defaultValues: {
+      title: job?.title || "",
+      description: job?.description || "",
+      department: job?.department || "",
+      location: job?.location || "",
+      seniority: job?.seniority || "",
+      sector: job?.sector || "",
+      assigned_consultant_id: job?.assigned_consultant_id || "",
+    },
   });
 
   useEffect(() => {
@@ -86,19 +113,25 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
       const users = await userService.getUsers({ role: "consultant" });
       setConsultants(users.filter(u => u.status === "active"));
     } catch (error) {
-      console.error("Error loading consultants:", error);
+      console.error("Error loading consultants");
     } finally {
       setLoadingConsultants(false);
     }
   };
 
-  const handleChange = (field: keyof CreateJobData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(formData);
+  const handleFormSubmit = (data: JobFormData) => {
+    // Sanitizar datos antes de enviar
+    const sanitizedData = {
+      title: sanitizeInput(data.title),
+      description: data.description, // Textarea, validado por React
+      department: data.department,
+      location: sanitizeInput(data.location),
+      seniority: data.seniority,
+      sector: data.sector,
+      assigned_consultant_id: data.assigned_consultant_id || undefined,
+    };
+    
+    onSubmit(sanitizedData);
   };
 
   return (
@@ -106,7 +139,7 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
       <CardHeader>
         <CardTitle>{job ? "Editar Oferta" : "Nueva Oferta"}</CardTitle>
       </CardHeader>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit(handleFormSubmit)}>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="title">
@@ -114,11 +147,13 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
             </Label>
             <Input
               id="title"
-              value={formData.title}
-              onChange={(e) => handleChange("title", e.target.value)}
               placeholder="Ej: Senior Software Engineer"
-              required
+              maxLength={MAX_LENGTHS.TITLE}
+              {...register("title")}
             />
+            {errors.title && (
+              <p className="text-sm text-red-500">{errors.title.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -127,12 +162,14 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
             </Label>
             <Textarea
               id="description"
-              value={formData.description}
-              onChange={(e) => handleChange("description", e.target.value)}
               placeholder="Describe las responsabilidades, requisitos y beneficios del puesto..."
               rows={5}
-              required
+              maxLength={MAX_LENGTHS.DESCRIPTION}
+              {...register("description")}
             />
+            {errors.description && (
+              <p className="text-sm text-red-500">{errors.description.message}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -141,8 +178,8 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
                 Departamento <span className="text-red-500">*</span>
               </Label>
               <Select
-                value={formData.department}
-                onValueChange={(value) => handleChange("department", value)}
+                value={watch("department")}
+                onValueChange={(value) => setValue("department", value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona un departamento" />
@@ -155,6 +192,9 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
                   ))}
                 </SelectContent>
               </Select>
+              {errors.department && (
+                <p className="text-sm text-red-500">{errors.department.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -163,11 +203,13 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
               </Label>
               <Input
                 id="location"
-                value={formData.location}
-                onChange={(e) => handleChange("location", e.target.value)}
                 placeholder="Ej: Madrid, España o Remoto"
-                required
+                maxLength={MAX_LENGTHS.NAME}
+                {...register("location")}
               />
+              {errors.location && (
+                <p className="text-sm text-red-500">{errors.location.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -175,8 +217,8 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
                 Nivel de Seniority <span className="text-red-500">*</span>
               </Label>
               <Select
-                value={formData.seniority}
-                onValueChange={(value) => handleChange("seniority", value)}
+                value={watch("seniority")}
+                onValueChange={(value) => setValue("seniority", value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona el nivel" />
@@ -189,6 +231,9 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
                   ))}
                 </SelectContent>
               </Select>
+              {errors.seniority && (
+                <p className="text-sm text-red-500">{errors.seniority.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -196,8 +241,8 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
                 Sector <span className="text-red-500">*</span>
               </Label>
               <Select
-                value={formData.sector}
-                onValueChange={(value) => handleChange("sector", value)}
+                value={watch("sector")}
+                onValueChange={(value) => setValue("sector", value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona el sector" />
@@ -210,13 +255,16 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
                   ))}
                 </SelectContent>
               </Select>
+              {errors.sector && (
+                <p className="text-sm text-red-500">{errors.sector.message}</p>
+              )}
             </div>
 
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="consultant">Consultor Asignado</Label>
               <Select
-                value={formData.assigned_consultant_id || "none"}
-                onValueChange={(value) => handleChange("assigned_consultant_id", value === "none" ? "" : value)}
+                value={watch("assigned_consultant_id") || "none"}
+                onValueChange={(value) => setValue("assigned_consultant_id", value === "none" ? "" : value)}
                 disabled={loadingConsultants}
               >
                 <SelectTrigger>
@@ -255,3 +303,5 @@ export function JobForm({ job, onSubmit, onCancel, isLoading }: JobFormProps) {
     </Card>
   );
 }
+
+export default JobForm;

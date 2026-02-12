@@ -7,20 +7,42 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('AuthService', () => {
   const API_BASE_URL = 'http://localhost:8000/api/v1';
+  let mockClient: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    localStorage.clear();
+    
+    mockClient = {
+      post: jest.fn(),
+      get: jest.fn(),
+      interceptors: {
+        request: { use: jest.fn() },
+        response: { use: jest.fn() },
+      },
+    };
+    
+    mockedAxios.create.mockReturnValue(mockClient);
+  });
+
+  describe('constructor', () => {
+    it('should create axios client with correct configuration', () => {
+      // Service is instantiated when imported, verify the config
+      expect(mockedAxios.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseURL: expect.any(String),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          withCredentials: true, // Important: cookies are sent with requests
+        })
+      );
+    });
   });
 
   describe('login', () => {
     it('should login with valid credentials', async () => {
       const mockResponse = {
         data: {
-          access_token: 'test_token',
-          refresh_token: 'refresh_token',
-          token_type: 'bearer',
-          expires_in: 1800,
           user: {
             id: '123',
             email: 'test@example.com',
@@ -30,77 +52,126 @@ describe('AuthService', () => {
         },
       };
 
-      mockedAxios.create = jest.fn(() => ({
-        post: jest.fn().mockResolvedValue(mockResponse),
-        get: jest.fn(),
-        interceptors: {
-          request: { use: jest.fn() },
-          response: { use: jest.fn() },
-        },
-      })) as any;
+      mockClient.post.mockResolvedValue(mockResponse);
 
-      // Recreate service to apply mocked axios
-      const { authService: freshAuthService } = jest.requireActual('../services/auth');
-      
-      // Note: We need to re-instantiate the service with mocked axios
-      // For this test, we'll verify the axios client configuration
-      expect(mockedAxios.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          baseURL: expect.any(String),
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        })
-      );
-    });
-  });
+      const result = await authService.login({ 
+        email: 'test@example.com', 
+        password: 'password123' 
+      });
 
-  describe('token validation', () => {
-    it('should return false for invalid token', () => {
-      // Create a mock for atob
-      global.atob = jest.fn(() => '{"exp": 1234567890}');
-      
-      // Test with expired token (mock implementation)
-      const isValid = authService.isTokenValid();
-      expect(isValid).toBe(false);
+      expect(mockClient.post).toHaveBeenCalledWith('/auth/login', {
+        email: 'test@example.com',
+        password: 'password123',
+      });
+      expect(result.user.email).toBe('test@example.com');
     });
 
-    it('should return false when no token exists', () => {
-      localStorage.getItem = jest.fn().mockReturnValue(null);
-      
-      const isValid = authService.isTokenValid();
-      expect(isValid).toBe(false);
-    });
-  });
-
-  describe('API endpoints', () => {
-    let mockClient: any;
-
-    beforeEach(() => {
-      mockClient = {
-        post: jest.fn(),
-        get: jest.fn(),
-        interceptors: {
-          request: { use: jest.fn((fn) => fn({ headers: {} })) },
-          response: { use: jest.fn() },
+    it('should handle login failure', async () => {
+      const error = {
+        response: {
+          status: 401,
+          data: { detail: 'Credenciales incorrectas' },
         },
       };
-      mockedAxios.create.mockReturnValue(mockClient);
+
+      mockClient.post.mockRejectedValue(error);
+
+      await expect(authService.login({ 
+        email: 'test@example.com', 
+        password: 'wrong' 
+      })).rejects.toMatchObject({
+        response: { status: 401 },
+      });
     });
+  });
 
-    it('should add token to request headers', () => {
-      localStorage.getItem = jest.fn((key) => {
-        if (key === 'access_token') return 'test_token';
-        return null;
+  describe('logout', () => {
+    it('should call logout endpoint', async () => {
+      mockClient.post.mockResolvedValue({ data: {} });
+
+      await authService.logout();
+
+      expect(mockClient.post).toHaveBeenCalledWith('/auth/logout');
+    });
+  });
+
+  describe('getMe', () => {
+    it('should fetch current user', async () => {
+      const mockUser = {
+        id: '123',
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'consultant',
+        status: 'active',
+      };
+
+      mockClient.get.mockResolvedValue({ data: mockUser });
+
+      const result = await authService.getMe();
+
+      expect(mockClient.get).toHaveBeenCalledWith('/auth/me');
+      expect(result.email).toBe('test@example.com');
+    });
+  });
+
+  describe('refreshToken', () => {
+    it('should call refresh endpoint', async () => {
+      mockClient.post.mockResolvedValue({ data: {} });
+
+      await authService.refreshToken();
+
+      expect(mockClient.post).toHaveBeenCalledWith('/auth/refresh');
+    });
+  });
+
+  describe('changePassword', () => {
+    it('should change password', async () => {
+      mockClient.post.mockResolvedValue({ data: {} });
+
+      await authService.changePassword('oldpass', 'newpass');
+
+      expect(mockClient.post).toHaveBeenCalledWith('/auth/change-password', {
+        current_password: 'oldpass',
+        new_password: 'newpass',
       });
+    });
+  });
 
-      // Re-initialize to trigger interceptor setup
-      jest.isolateModules(() => {
-        require('../services/auth');
+  describe('changeEmail', () => {
+    it('should change email', async () => {
+      mockClient.post.mockResolvedValue({ data: {} });
+
+      await authService.changeEmail('newemail@example.com', 'password');
+
+      expect(mockClient.post).toHaveBeenCalledWith('/auth/change-email', {
+        new_email: 'newemail@example.com',
+        password: 'password',
       });
+    });
+  });
 
-      // The interceptor should have been called
-      expect(mockClient.interceptors.request.use).toHaveBeenCalled();
+  describe('forgotPassword', () => {
+    it('should request password reset', async () => {
+      mockClient.post.mockResolvedValue({ data: {} });
+
+      await authService.forgotPassword('test@example.com');
+
+      expect(mockClient.post).toHaveBeenCalledWith('/auth/forgot-password', {
+        email: 'test@example.com',
+      });
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('should reset password with token', async () => {
+      mockClient.post.mockResolvedValue({ data: {} });
+
+      await authService.resetPassword('reset_token_123', 'newpassword');
+
+      expect(mockClient.post).toHaveBeenCalledWith('/auth/reset-password', {
+        token: 'reset_token_123',
+        new_password: 'newpassword',
+      });
     });
   });
 });
@@ -115,7 +186,6 @@ describe('API Service Integration Tests', () => {
         },
       };
 
-      // Mock should propagate the error
       await expect(Promise.reject(error)).rejects.toMatchObject({
         response: { status: 401 },
       });

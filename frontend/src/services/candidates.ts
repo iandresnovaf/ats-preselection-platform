@@ -18,7 +18,8 @@ export const candidateService = {
     if (filters?.search) params.append("search", filters.search);
     
     const response = await api.get(`/candidates?${params.toString()}`);
-    return response.data;
+    // El backend retorna paginación: {items: [], total: ...}
+    return response.data.items || response.data || [];
   },
 
   async getCandidate(id: string): Promise<CandidateWithHistory> {

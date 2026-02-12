@@ -10,6 +10,8 @@ from app.core.auth import (
     verify_password,
     get_password_hash,
 )
+from app.core.security_logging import SecurityLogger
+from app.core.cache import cache, cached, invalidate_config_cache, invalidate_job_cache, invalidate_candidate_cache
 
 __all__ = [
     "settings",
@@ -27,4 +29,10 @@ __all__ = [
     "create_refresh_token",
     "verify_password",
     "get_password_hash",
+    "SecurityLogger",
+    "cache",
+    "cached",
+    "invalidate_config_cache",
+    "invalidate_job_cache",
+    "invalidate_candidate_cache",
 ]

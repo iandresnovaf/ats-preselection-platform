@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, desc
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.models import Candidate, CandidateStatus, Evaluation, JobOpening
 from app.schemas import CandidateCreate, CandidateUpdate
@@ -26,11 +26,11 @@ class CandidateService:
         return result.scalar_one_or_none()
     
     async def get_by_id_with_evaluations(self, candidate_id: str) -> Optional[Candidate]:
-        """Obtener candidato con sus evaluaciones."""
+        """Obtener candidato con sus evaluaciones en un solo query usando JOIN."""
         result = await self.db.execute(
             select(Candidate)
+            .options(joinedload(Candidate.evaluations))
             .where(Candidate.id == candidate_id)
-            .options(selectinload(Candidate.evaluations))
         )
         return result.scalar_one_or_none()
     

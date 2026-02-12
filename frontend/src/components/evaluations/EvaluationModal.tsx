@@ -167,3 +167,5 @@ export function EvaluationModal({
     </Dialog>
   );
 }
+
+export default EvaluationModal;

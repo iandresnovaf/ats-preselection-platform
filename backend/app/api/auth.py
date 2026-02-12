@@ -1,8 +1,8 @@
-"""API endpoints de autenticación."""
+"""API endpoints de autenticación con logging de seguridad."""
 from datetime import timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.core.auth import (
     get_password_hash,
     decode_token,
 )
+from app.core.security_logging import SecurityLogger
 from app.schemas import (
     LoginRequest,
     Token,
@@ -28,19 +29,38 @@ from app.schemas import (
 )
 from app.services.user_service import UserService
 
+# Logger de seguridad
+security_logger = SecurityLogger()
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
+# Cookie settings
+COOKIE_SETTINGS = {
+    "httponly": True,
+    "secure": False,  # True en producción con HTTPS
+    "samesite": "lax",
+    "path": "/",
+}
 
-@router.post("/login", response_model=Token)
+
+@router.post("/login")
 async def login(
     credentials: LoginRequest,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Login con email y password."""
-    user = await authenticate_user(db, credentials.email, credentials.password)
+    """Login con email y password. Setea cookies httpOnly."""
+    user = await authenticate_user(
+        db, 
+        credentials.email, 
+        credentials.password,
+        request=request
+    )
     
     if not user:
+        # Respuesta genérica para prevenir user enumeration
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas",
@@ -61,23 +81,58 @@ async def login(
     
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
     
+    # Setear cookies httpOnly
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        **COOKIE_SETTINGS
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        **COOKIE_SETTINGS
+    )
+    
     return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "success": True,
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "status": user.status.value,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+        }
     }
 
 
-@router.post("/refresh", response_model=Token)
+@router.post("/refresh")
 async def refresh_token(
-    refresh_token: str,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Refresh access token."""
-    payload = decode_token(refresh_token)
+    """Refresh access token. Lee refresh_token de cookie y setea nueva access_token cookie."""
+    refresh_token_str = request.cookies.get("refresh_token")
+    
+    if not refresh_token_str:
+        await security_logger.log_token_refresh(
+            request, "unknown", success=False, reason="No refresh token in cookie"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token no encontrado",
+        )
+    
+    payload = decode_token(refresh_token_str)
     
     if not payload or payload.get("type") != "refresh":
+        await security_logger.log_token_refresh(
+            request, "unknown", success=False, reason="Token inválido o no es refresh token"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token inválido",
@@ -85,6 +140,9 @@ async def refresh_token(
     
     user_id = payload.get("sub")
     if not user_id:
+        await security_logger.log_token_refresh(
+            request, "unknown", success=False, reason="Token sin user_id"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido",
@@ -95,6 +153,9 @@ async def refresh_token(
     user = await user_service.get_by_id(user_id)
     
     if not user or user.status.value != "active":
+        await security_logger.log_token_refresh(
+            request, user_id, success=False, reason="Usuario no encontrado o inactivo"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no encontrado o inactivo",
@@ -108,58 +169,77 @@ async def refresh_token(
     )
     new_refresh_token = create_refresh_token(data={"sub": str(user.id)})
     
-    return {
-        "access_token": new_access_token,
-        "refresh_token": new_refresh_token,
-        "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-    }
+    # Setear nuevas cookies
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        **COOKIE_SETTINGS
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        **COOKIE_SETTINGS
+    )
+    
+    await security_logger.log_token_refresh(request, user_id, success=True)
+    
+    return {"success": True}
 
 
-@router.post("/logout", response_model=MessageResponse)
+@router.post("/logout")
 async def logout(
-    refresh_token: str,
+    request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Logout - revoca el refresh token."""
-    # En una implementación completa, agregaríamos el token a una blacklist en Redis
-    # Por ahora, solo validamos que el token sea válido
-    payload = decode_token(refresh_token)
+    """Logout - limpia las cookies httpOnly."""
+    # Leer refresh_token de cookie para logging
+    refresh_token_str = request.cookies.get("refresh_token")
     
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido",
-        )
+    if refresh_token_str:
+        payload = decode_token(refresh_token_str)
+        if payload:
+            user_id = payload.get("sub")
+            if user_id:
+                await security_logger.log_logout(request, user_id)
+    
+    # Limpiar cookies
+    response.delete_cookie(key="access_token", path="/")
+    response.delete_cookie(key="refresh_token", path="/")
     
     return {"message": "Logout exitoso", "success": True}
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Obtener información del usuario actual."""
-    from app.core.deps import get_current_user
+    """Obtener información del usuario actual desde cookie."""
+    from app.core.auth import get_current_user_from_cookie
     
-    user = await get_current_user(credentials, db)
+    user = await get_current_user_from_cookie(request, db)
     return user
 
 
 @router.post("/change-password", response_model=MessageResponse)
 async def change_password(
     data: PasswordChange,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Cambiar password del usuario actual."""
-    from app.core.deps import get_current_user
+    from app.core.auth import get_current_user_from_cookie
     
-    user = await get_current_user(credentials, db)
+    user = await get_current_user_from_cookie(request, db)
     
     # Verificar password actual
     if not verify_password(data.current_password, user.hashed_password):
+        await security_logger.log_password_change(
+            request, str(user.id), success=False, reason="Contraseña actual incorrecta"
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password actual incorrecto",
@@ -169,19 +249,21 @@ async def change_password(
     user_service = UserService(db)
     await user_service.update_password(str(user.id), data.new_password)
     
+    await security_logger.log_password_change(request, str(user.id), success=True)
+    
     return {"message": "Password cambiado exitosamente", "success": True}
 
 
 @router.post("/change-email", response_model=MessageResponse)
 async def change_email(
     data: EmailChange,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Cambiar email del usuario actual."""
-    from app.core.deps import get_current_user
+    from app.core.auth import get_current_user_from_cookie
     
-    user = await get_current_user(credentials, db)
+    user = await get_current_user_from_cookie(request, db)
     
     # Verificar password
     if not verify_password(data.password, user.hashed_password):

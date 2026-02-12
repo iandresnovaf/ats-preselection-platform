@@ -18,7 +18,8 @@ export const evaluationService = {
     if (filters?.end_date) params.append("end_date", filters.end_date);
     
     const response = await api.get(`/evaluations?${params.toString()}`);
-    return response.data;
+    // El backend retorna paginación: {items: [], total: ...}
+    return response.data.items || response.data || [];
   },
 
   async getEvaluation(id: string): Promise<Evaluation> {

@@ -9,7 +9,8 @@ export const userService = {
     if (filters?.search) params.append("search", filters.search);
     
     const response = await api.get(`/api/v1/users?${params.toString()}`);
-    return response.data;
+    // El backend retorna paginación: {items: [], total: ...}
+    return response.data.items || response.data || [];
   },
 
   async getUser(id: string): Promise<User> {

@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import { User } from '@/types/auth';
 import { authService } from '@/services/auth';
 
@@ -28,34 +27,8 @@ function transformUser(user: any): User {
   };
 }
 
-// Valida si un token JWT está expirado
-function isTokenExpired(token: string | null): boolean {
-  if (!token) return true;
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const exp = payload.exp * 1000; // Convert to milliseconds
-    return Date.now() >= exp;
-  } catch {
-    return true;
-  }
-}
-
-// Obtiene tiempo restante de expiración en ms
-function getTokenTimeRemaining(token: string | null): number {
-  if (!token) return 0;
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const exp = payload.exp * 1000;
-    return Math.max(0, exp - Date.now());
-  } catch {
-    return 0;
-  }
-}
-
 interface AuthState {
   user: User | null;
-  token: string | null;
-  refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -65,207 +38,135 @@ interface AuthState {
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   setUser: (user: User | null) => void;
-  setToken: (token: string | null) => void;
   clearError: () => void;
-  refreshAccessToken: () => Promise<string | null>;
-  isTokenValid: () => boolean;
-  getTokenTimeRemaining: () => number;
+  checkAuth: () => Promise<boolean>;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      user: null,
-      token: null,
-      refreshToken: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  user: null,
+  isAuthenticated: false,
+  isLoading: false,
+  error: null,
 
-      login: async (email: string, password: string) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await authService.login({ email, password });
-          
-          // Store tokens
-          localStorage.setItem('access_token', response.access_token);
-          localStorage.setItem('refresh_token', response.refresh_token);
-          
-          // Transformar usuario
-          const transformedUser = transformUser(response.user);
-          
-          set({
-            user: transformedUser,
-            token: response.access_token,
-            refreshToken: response.refresh_token,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null,
-          });
-        } catch (error: any) {
-          const errorMessage = error.response?.data?.detail || 
-                              error.response?.data?.message || 
-                              'Error de autenticación. Por favor, verifica tus credenciales.';
-          set({
-            isLoading: false,
-            error: errorMessage,
-            isAuthenticated: false,
-            user: null,
-            token: null,
-            refreshToken: null,
-          });
-          throw error;
-        }
-      },
-
-      logout: async () => {
-        try {
-          await authService.logout();
-        } catch (error) {
-          // Ignore logout errors
-        } finally {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          set({
-            user: null,
-            token: null,
-            refreshToken: null,
-            isAuthenticated: false,
-            isLoading: false,
-            error: null,
-          });
-        }
-      },
-
-      fetchUser: async () => {
-        const token = get().token || localStorage.getItem('access_token');
-
-        // Validar si el token existe y no está expirado
-        if (!token || isTokenExpired(token)) {
-          // Intentar refresh si hay refresh token
-          const refreshToken = get().refreshToken || localStorage.getItem('refresh_token');
-          if (refreshToken) {
-            const newToken = await get().refreshAccessToken();
-            if (!newToken) {
-              set({ isAuthenticated: false, user: null, token: null, refreshToken: null });
-              localStorage.removeItem('access_token');
-              localStorage.removeItem('refresh_token');
-              return;
-            }
-          } else {
-            set({ isAuthenticated: false, user: null });
-            return;
-          }
-        }
-
-        set({ isLoading: true });
-        try {
-          const user = await authService.getMe();
-          const transformedUser = transformUser(user);
-          set({
-            user: transformedUser,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error: any) {
-          if (error.response?.status === 401) {
-            // Try to refresh token
-            const newToken = await get().refreshAccessToken();
-            if (!newToken) {
-              set({
-                user: null,
-                token: null,
-                refreshToken: null,
-                isAuthenticated: false,
-                isLoading: false,
-              });
-              localStorage.removeItem('access_token');
-              localStorage.removeItem('refresh_token');
-            }
-          } else if (error.response?.status === 403) {
-            // Forbidden - user doesn't have permission
-            set({
-              isLoading: false,
-              error: 'No tienes permisos para acceder a este recurso',
-            });
-          } else {
-            set({
-              isLoading: false,
-              error: error.response?.data?.detail || 'Error al cargar usuario',
-            });
-          }
-        }
-      },
-
-      setUser: (user: User | null) => {
-        set({ user, isAuthenticated: !!user });
-      },
-
-      setToken: (token: string | null) => {
-        set({ token, isAuthenticated: !!token });
-        if (token) {
-          localStorage.setItem('access_token', token);
-        } else {
-          localStorage.removeItem('access_token');
-        }
-      },
-
-      clearError: () => {
-        set({ error: null });
-      },
-
-      refreshAccessToken: async () => {
-        const currentRefreshToken = get().refreshToken || localStorage.getItem('refresh_token');
-        if (!currentRefreshToken) {
-          return null;
-        }
-
-        try {
-          const response = await authService.refreshToken(currentRefreshToken);
-          localStorage.setItem('access_token', response.access_token);
-          localStorage.setItem('refresh_token', response.refresh_token);
-          set({
-            token: response.access_token,
-            refreshToken: response.refresh_token,
-          });
-          return response.access_token;
-        } catch (error: any) {
-          // Si el refresh token es inválido, limpiar todo
-          if (error.response?.status === 401 || error.response?.status === 403) {
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            set({
-              user: null,
-              token: null,
-              refreshToken: null,
-              isAuthenticated: false,
-            });
-          }
-          return null;
-        }
-      },
-
-      // Verifica si el token actual es válido
-      isTokenValid: () => {
-        const token = get().token || localStorage.getItem('access_token');
-        return !isTokenExpired(token);
-      },
-
-      // Obtiene el tiempo restante del token en ms
-      getTokenTimeRemaining: () => {
-        const token = get().token || localStorage.getItem('access_token');
-        return getTokenTimeRemaining(token);
-      },
-    }),
-    {
-      name: 'auth-storage',
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        user: state.user,
-        token: state.token,
-        refreshToken: state.refreshToken,
-        isAuthenticated: state.isAuthenticated,
-      }),
+  login: async (email: string, password: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      // El backend envía tokens en cookies httpOnly automáticamente
+      const response = await authService.login({ email, password });
+      
+      // Transformar usuario
+      const transformedUser = transformUser(response.user);
+      
+      set({
+        user: transformedUser,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+      });
+    } catch (error: any) {
+      // No exponer detalles internos del error
+      let errorMessage = 'Error de autenticación. Por favor, verifica tus credenciales.';
+      
+      // Solo mostrar mensajes genéricos al usuario
+      if (error.response?.status === 401) {
+        errorMessage = 'Credenciales inválidas. Por favor, verifica tu email y contraseña.';
+      } else if (error.response?.status === 429) {
+        errorMessage = 'Demasiados intentos. Por favor, intenta más tarde.';
+      } else if (error.response?.status >= 500) {
+        errorMessage = 'Error del servidor. Por favor, intenta más tarde.';
+      }
+      
+      set({
+        isLoading: false,
+        error: errorMessage,
+        isAuthenticated: false,
+        user: null,
+      });
+      throw error;
     }
-  )
-);
+  },
+
+  logout: async () => {
+    try {
+      await authService.logout();
+    } catch (error) {
+      // Ignorar errores de logout - las cookies httpOnly se eliminarán del lado del servidor
+    } finally {
+      set({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null,
+      });
+    }
+  },
+
+  fetchUser: async () => {
+    set({ isLoading: true });
+    try {
+      const user = await authService.getMe();
+      const transformedUser = transformUser(user);
+      set({
+        user: transformedUser,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        // No autenticado - redirigir a login
+        set({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
+      } else if (error.response?.status === 403) {
+        // Forbidden - user doesn't have permission
+        set({
+          isLoading: false,
+          error: 'No tienes permisos para acceder a este recurso',
+        });
+      } else {
+        // Error genérico sin exponer detalles internos
+        set({
+          isLoading: false,
+          error: 'Error al cargar la información del usuario',
+        });
+      }
+    }
+  },
+
+  setUser: (user: User | null) => {
+    set({ user, isAuthenticated: !!user });
+  },
+
+  clearError: () => {
+    set({ error: null });
+  },
+
+  checkAuth: async () => {
+    try {
+      const user = await authService.getMe();
+      const transformedUser = transformUser(user);
+      set({
+        user: transformedUser,
+        isAuthenticated: true,
+      });
+      return true;
+    } catch (error: any) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        set({
+          user: null,
+          isAuthenticated: false,
+        });
+      }
+      return false;
+    }
+  },
+}));
+
+// Selectores optimizados para evitar re-renders
+// Uso: const user = useUser() en lugar de const user = useAuthStore(state => state.user)
+export const useUser = () => useAuthStore(state => state.user);
+export const useIsAuthenticated = () => useAuthStore(state => state.isAuthenticated);
+export const useAuthLoading = () => useAuthStore(state => state.isLoading);
+export const useAuthError = () => useAuthStore(state => state.error);

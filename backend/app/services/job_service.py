@@ -1,6 +1,8 @@
 """Servicio para gestión de ofertas de trabajo."""
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime
+import base64
+import json
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, desc
@@ -8,6 +10,23 @@ from sqlalchemy.orm import selectinload
 
 from app.models import JobOpening, JobStatus, Candidate
 from app.schemas import JobOpeningCreate, JobOpeningUpdate
+
+
+def encode_cursor(created_at: datetime) -> str:
+    """Codificar fecha de creación como cursor base64."""
+    data = {"created_at": created_at.isoformat()}
+    return base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip("=")
+
+
+def decode_cursor(cursor: str) -> datetime:
+    """Decodificar cursor a fecha de creación."""
+    # Agregar padding si es necesario
+    padding = 4 - len(cursor) % 4
+    if padding != 4:
+        cursor += "=" * padding
+    
+    data = json.loads(base64.urlsafe_b64decode(cursor.encode()))
+    return datetime.fromisoformat(data["created_at"])
 
 
 class JobService:
@@ -74,6 +93,66 @@ class JobService:
         jobs = result.scalars().all()
         
         return jobs, total
+    
+    async def list_jobs_cursor(
+        self,
+        cursor: Optional[str] = None,
+        limit: int = 20,
+        status: Optional[str] = None,
+        assigned_consultant_id: Optional[str] = None,
+        search: Optional[str] = None,
+    ) -> Tuple[List[JobOpening], Optional[str]]:
+        """
+        Listar ofertas con paginación basada en cursor (más eficiente que OFFSET).
+        
+        Args:
+            cursor: Cursor de paginación (opcional)
+            limit: Cantidad de items por página
+            status: Filtro por estado
+            assigned_consultant_id: Filtro por consultor asignado
+            search: Búsqueda por título, departamento o ubicación
+            
+        Returns:
+            Tupla de (lista de jobs, siguiente cursor o None)
+        """
+        # Query base ordenada por created_at descendente
+        query = select(JobOpening).order_by(JobOpening.created_at.desc())
+        
+        # Aplicar filtros
+        if status:
+            query = query.where(JobOpening.status == status)
+        if assigned_consultant_id:
+            query = query.where(JobOpening.assigned_consultant_id == assigned_consultant_id)
+        if search:
+            search_filter = or_(
+                JobOpening.title.ilike(f"%{search}%"),
+                JobOpening.department.ilike(f"%{search}%"),
+                JobOpening.location.ilike(f"%{search}%"),
+            )
+            query = query.where(search_filter)
+        
+        # Aplicar cursor (paginación)
+        if cursor:
+            try:
+                cursor_date = decode_cursor(cursor)
+                query = query.where(JobOpening.created_at < cursor_date)
+            except Exception:
+                # Cursor inválido, ignorar y retornar primera página
+                pass
+        
+        # Pedir limit + 1 para saber si hay más páginas
+        query = query.limit(limit + 1)
+        
+        result = await self.db.execute(query)
+        jobs = list(result.scalars().all())
+        
+        # Determinar si hay siguiente página
+        next_cursor = None
+        if len(jobs) > limit:
+            next_cursor = encode_cursor(jobs[-1].created_at)
+            jobs = jobs[:limit]
+        
+        return jobs, next_cursor
     
     async def create_job(self, data: JobOpeningCreate) -> JobOpening:
         """Crear nueva oferta de trabajo."""

@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import { CreateCandidateData, Candidate } from "@/types/candidates";
 import { JobOpening } from "@/types/jobs";
 import { Button } from "@/components/ui/button";
@@ -14,6 +17,14 @@ import {
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { jobService } from "@/services/jobs";
+import { 
+  isValidEmail, 
+  isValidPhone, 
+  isValidUrl, 
+  sanitizeName, 
+  sanitizePhone,
+  MAX_LENGTHS 
+} from "@/lib/validation";
 
 interface CandidateFormProps {
   candidate?: Candidate;
@@ -32,22 +43,58 @@ const sources = [
   { value: "other", label: "Otro" },
 ];
 
+// Schema de validación con Zod
+const candidateSchema = z.object({
+  first_name: z.string().min(1, "El nombre es requerido").max(MAX_LENGTHS.NAME, "Nombre demasiado largo"),
+  last_name: z.string().min(1, "El apellido es requerido").max(MAX_LENGTHS.NAME, "Apellido demasiado largo"),
+  email: z.string().min(1, "El email es requerido").refine((val) => isValidEmail(val), {
+    message: "Email inválido",
+  }),
+  phone: z.string().optional().refine((val) => !val || isValidPhone(val), {
+    message: "Teléfono inválido",
+  }),
+  job_opening_id: z.string().min(1, "Debes seleccionar una oferta"),
+  source: z.string(),
+  linkedin_url: z.string().optional().refine((val) => !val || isValidUrl(val), {
+    message: "URL de LinkedIn inválida",
+  }),
+  portfolio_url: z.string().optional().refine((val) => !val || isValidUrl(val), {
+    message: "URL de portfolio inválida",
+  }),
+  years_experience: z.number().min(0).max(50).optional(),
+  current_company: z.string().max(MAX_LENGTHS.NAME, "Nombre de empresa demasiado largo").optional(),
+  current_position: z.string().max(MAX_LENGTHS.NAME, "Posición demasiado larga").optional(),
+  notes: z.string().max(MAX_LENGTHS.NOTES, "Notas demasiado largas").optional(),
+});
+
+type CandidateFormData = z.infer<typeof candidateSchema>;
+
 export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading }: CandidateFormProps) {
   const [jobs, setJobs] = useState<JobOpening[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(false);
-  const [formData, setFormData] = useState<CreateCandidateData>({
-    first_name: candidate?.first_name || "",
-    last_name: candidate?.last_name || "",
-    email: candidate?.email || "",
-    phone: candidate?.phone || "",
-    job_opening_id: candidate?.job_opening_id || jobId || "",
-    source: candidate?.source || "manual",
-    linkedin_url: candidate?.linkedin_url || "",
-    portfolio_url: candidate?.portfolio_url || "",
-    years_experience: candidate?.years_experience || undefined,
-    current_company: candidate?.current_company || "",
-    current_position: candidate?.current_position || "",
-    notes: candidate?.notes || "",
+  
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<CandidateFormData>({
+    resolver: zodResolver(candidateSchema),
+    defaultValues: {
+      first_name: candidate?.first_name || "",
+      last_name: candidate?.last_name || "",
+      email: candidate?.email || "",
+      phone: candidate?.phone || "",
+      job_opening_id: candidate?.job_opening_id || jobId || "",
+      source: candidate?.source || "manual",
+      linkedin_url: candidate?.linkedin_url || "",
+      portfolio_url: candidate?.portfolio_url || "",
+      years_experience: candidate?.years_experience || undefined,
+      current_company: candidate?.current_company || "",
+      current_position: candidate?.current_position || "",
+      notes: candidate?.notes || "",
+    },
   });
 
   useEffect(() => {
@@ -60,19 +107,30 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
       const activeJobs = await jobService.getJobs({ status: "active" });
       setJobs(activeJobs);
     } catch (error) {
-      console.error("Error loading jobs:", error);
+      console.error("Error loading jobs");
     } finally {
       setLoadingJobs(false);
     }
   };
 
-  const handleChange = (field: keyof CreateCandidateData, value: string | number | undefined) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(formData);
+  const handleFormSubmit = (data: CandidateFormData) => {
+    // Sanitizar datos antes de enviar
+    const sanitizedData: CreateCandidateData = {
+      first_name: sanitizeName(data.first_name),
+      last_name: sanitizeName(data.last_name),
+      email: data.email.toLowerCase().trim(),
+      phone: data.phone ? sanitizePhone(data.phone) : undefined,
+      job_opening_id: data.job_opening_id,
+      source: data.source,
+      linkedin_url: data.linkedin_url || undefined,
+      portfolio_url: data.portfolio_url || undefined,
+      years_experience: data.years_experience,
+      current_company: data.current_company || undefined,
+      current_position: data.current_position || undefined,
+      notes: data.notes || undefined,
+    };
+    
+    onSubmit(sanitizedData);
   };
 
   return (
@@ -80,7 +138,7 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
       <CardHeader>
         <CardTitle>{candidate ? "Editar Candidato" : "Nuevo Candidato"}</CardTitle>
       </CardHeader>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit(handleFormSubmit)}>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -89,11 +147,13 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
               </Label>
               <Input
                 id="first_name"
-                value={formData.first_name}
-                onChange={(e) => handleChange("first_name", e.target.value)}
                 placeholder="Nombre"
-                required
+                maxLength={MAX_LENGTHS.NAME}
+                {...register("first_name")}
               />
+              {errors.first_name && (
+                <p className="text-sm text-red-500">{errors.first_name.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -102,11 +162,13 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
               </Label>
               <Input
                 id="last_name"
-                value={formData.last_name}
-                onChange={(e) => handleChange("last_name", e.target.value)}
                 placeholder="Apellido"
-                required
+                maxLength={MAX_LENGTHS.NAME}
+                {...register("last_name")}
               />
+              {errors.last_name && (
+                <p className="text-sm text-red-500">{errors.last_name.message}</p>
+              )}
             </div>
           </div>
 
@@ -118,21 +180,26 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
               <Input
                 id="email"
                 type="email"
-                value={formData.email}
-                onChange={(e) => handleChange("email", e.target.value)}
                 placeholder="correo@ejemplo.com"
-                required
+                maxLength={MAX_LENGTHS.EMAIL}
+                {...register("email")}
               />
+              {errors.email && (
+                <p className="text-sm text-red-500">{errors.email.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="phone">Teléfono</Label>
               <Input
                 id="phone"
-                value={formData.phone || ""}
-                onChange={(e) => handleChange("phone", e.target.value)}
                 placeholder="+34 123 456 789"
+                maxLength={MAX_LENGTHS.PHONE}
+                {...register("phone")}
               />
+              {errors.phone && (
+                <p className="text-sm text-red-500">{errors.phone.message}</p>
+              )}
             </div>
           </div>
 
@@ -142,8 +209,8 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
                 Oferta <span className="text-red-500">*</span>
               </Label>
               <Select
-                value={formData.job_opening_id}
-                onValueChange={(value) => handleChange("job_opening_id", value)}
+                value={watch("job_opening_id")}
+                onValueChange={(value) => setValue("job_opening_id", value)}
                 disabled={loadingJobs || !!jobId}
               >
                 <SelectTrigger>
@@ -157,13 +224,16 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
                   ))}
                 </SelectContent>
               </Select>
+              {errors.job_opening_id && (
+                <p className="text-sm text-red-500">{errors.job_opening_id.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="source">Fuente</Label>
               <Select
-                value={formData.source}
-                onValueChange={(value) => handleChange("source", value)}
+                value={watch("source")}
+                onValueChange={(value) => setValue("source", value)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecciona la fuente" />
@@ -184,20 +254,26 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
               <Label htmlFor="linkedin_url">LinkedIn</Label>
               <Input
                 id="linkedin_url"
-                value={formData.linkedin_url || ""}
-                onChange={(e) => handleChange("linkedin_url", e.target.value)}
                 placeholder="https://linkedin.com/in/..."
+                maxLength={MAX_LENGTHS.URL}
+                {...register("linkedin_url")}
               />
+              {errors.linkedin_url && (
+                <p className="text-sm text-red-500">{errors.linkedin_url.message}</p>
+              )}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="portfolio_url">Portfolio</Label>
               <Input
                 id="portfolio_url"
-                value={formData.portfolio_url || ""}
-                onChange={(e) => handleChange("portfolio_url", e.target.value)}
                 placeholder="https://..."
+                maxLength={MAX_LENGTHS.URL}
+                {...register("portfolio_url")}
               />
+              {errors.portfolio_url && (
+                <p className="text-sm text-red-500">{errors.portfolio_url.message}</p>
+              )}
             </div>
           </div>
 
@@ -206,9 +282,9 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
               <Label htmlFor="current_company">Empresa Actual</Label>
               <Input
                 id="current_company"
-                value={formData.current_company || ""}
-                onChange={(e) => handleChange("current_company", e.target.value)}
                 placeholder="Nombre de la empresa"
+                maxLength={MAX_LENGTHS.NAME}
+                {...register("current_company")}
               />
             </div>
 
@@ -216,9 +292,9 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
               <Label htmlFor="current_position">Posición Actual</Label>
               <Input
                 id="current_position"
-                value={formData.current_position || ""}
-                onChange={(e) => handleChange("current_position", e.target.value)}
                 placeholder="Ej: Software Engineer"
+                maxLength={MAX_LENGTHS.NAME}
+                {...register("current_position")}
               />
             </div>
           </div>
@@ -230,9 +306,8 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
               type="number"
               min={0}
               max={50}
-              value={formData.years_experience || ""}
-              onChange={(e) => handleChange("years_experience", e.target.value ? parseInt(e.target.value) : undefined)}
               placeholder="0"
+              {...register("years_experience", { valueAsNumber: true })}
             />
           </div>
         </CardContent>
@@ -257,3 +332,5 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
     </Card>
   );
 }
+
+export default CandidateForm;

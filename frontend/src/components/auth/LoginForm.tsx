@@ -11,10 +11,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
+import { isValidEmail, MAX_LENGTHS } from "@/lib/validation";
 
+// Schema de validación estricto con Zod
 const loginSchema = z.object({
-  email: z.string().email("Email inválido"),
-  password: z.string().min(1, "Password requerido"),
+  email: z
+    .string()
+    .min(1, "El email es requerido")
+    .max(MAX_LENGTHS.EMAIL, "El email es demasiado largo")
+    .refine((val) => isValidEmail(val), {
+      message: "Por favor ingresa un email válido",
+    }),
+  password: z
+    .string()
+    .min(1, "La contraseña es requerida")
+    .max(MAX_LENGTHS.PASSWORD, "La contraseña es demasiado larga"),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -35,7 +46,9 @@ export function LoginForm() {
     setIsLoading(true);
     clearError();
     try {
-      await login(data.email, data.password);
+      // Sanitizar inputs antes de enviar
+      const sanitizedEmail = data.email.toLowerCase().trim();
+      await login(sanitizedEmail, data.password);
     } catch (error) {
       // Error is handled by the store
     } finally {
@@ -53,6 +66,8 @@ export function LoginForm() {
               id="email"
               type="email"
               placeholder="tu@email.com"
+              autoComplete="email"
+              maxLength={MAX_LENGTHS.EMAIL}
               {...register("email")}
             />
             {errors.email && (
@@ -62,7 +77,7 @@ export function LoginForm() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Link 
                 href="/forgot-password" 
                 className="text-sm text-primary hover:underline"
@@ -74,6 +89,8 @@ export function LoginForm() {
               id="password"
               type="password"
               placeholder="••••••••"
+              autoComplete="current-password"
+              maxLength={MAX_LENGTHS.PASSWORD}
               {...register("password")}
             />
             {errors.password && (

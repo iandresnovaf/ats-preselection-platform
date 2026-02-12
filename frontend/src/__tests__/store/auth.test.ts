@@ -1,4 +1,4 @@
-import { useAuthStore, transformUser } from '../store/auth';
+import { useAuthStore } from '../store/auth';
 import { authService } from '../services/auth';
 
 // Mock auth service
@@ -6,58 +6,19 @@ jest.mock('../services/auth');
 
 describe('Auth Store', () => {
   beforeEach(() => {
-    // Clear the store and localStorage before each test
+    // Clear the store before each test
     const store = useAuthStore.getState();
     store.logout();
-    localStorage.clear();
     jest.clearAllMocks();
   });
 
-  describe('transformUser', () => {
-    it('should transform backend user to frontend format', () => {
-      const backendUser = {
-        id: '123',
-        email: 'test@example.com',
-        full_name: 'John Doe',
-        role: 'consultant',
-        status: 'active',
-        created_at: '2024-01-01',
-      };
-
-      const result = transformUser(backendUser);
-
-      expect(result.id).toBe('123');
-      expect(result.email).toBe('test@example.com');
-      expect(result.fullName).toBe('John Doe');
-      expect(result.firstName).toBe('John');
-      expect(result.lastName).toBe('Doe');
-      expect(result.isActive).toBe(true);
-    });
-
-    it('should handle single word names', () => {
-      const backendUser = {
-        full_name: 'John',
-      };
-
-      const result = transformUser(backendUser);
-
-      expect(result.firstName).toBe('John');
-      expect(result.lastName).toBe('');
-    });
-
-    it('should handle null user', () => {
-      const result = transformUser(null);
-      expect(result).toBeNull();
-    });
+  afterEach(() => {
+    jest.resetAllMocks();
   });
 
   describe('login', () => {
     it('should successfully login and set user state', async () => {
       const mockResponse = {
-        access_token: 'test_access_token',
-        refresh_token: 'test_refresh_token',
-        token_type: 'bearer',
-        expires_in: 1800,
         user: {
           id: '123',
           email: 'test@example.com',
@@ -76,14 +37,14 @@ describe('Auth Store', () => {
       const state = useAuthStore.getState();
       expect(state.isAuthenticated).toBe(true);
       expect(state.user?.email).toBe('test@example.com');
-      expect(state.token).toBe('test_access_token');
-      expect(state.refreshToken).toBe('test_refresh_token');
+      expect(state.user?.fullName).toBe('Test User');
       expect(state.error).toBeNull();
     });
 
-    it('should handle login failure', async () => {
+    it('should handle login failure with 401', async () => {
       const error = {
         response: {
+          status: 401,
           data: {
             detail: 'Credenciales incorrectas',
           },
@@ -99,7 +60,25 @@ describe('Auth Store', () => {
       const state = useAuthStore.getState();
       expect(state.isAuthenticated).toBe(false);
       expect(state.user).toBeNull();
-      expect(state.error).toBe('Credenciales incorrectas');
+      expect(state.error).toBe('Credenciales inválidas. Por favor, verifica tu email y contraseña.');
+    });
+
+    it('should handle login failure with 429', async () => {
+      const error = {
+        response: {
+          status: 429,
+        },
+      };
+
+      (authService.login as jest.Mock).mockRejectedValue(error);
+
+      const store = useAuthStore.getState();
+      
+      await expect(store.login('test@example.com', 'password')).rejects.toThrow();
+
+      const state = useAuthStore.getState();
+      expect(state.isAuthenticated).toBe(false);
+      expect(state.error).toBe('Demasiados intentos. Por favor, intenta más tarde.');
     });
 
     it('should handle network errors', async () => {
@@ -117,11 +96,9 @@ describe('Auth Store', () => {
 
   describe('logout', () => {
     it('should clear auth state on logout', async () => {
-      // First login
+      // First set authenticated state
       useAuthStore.setState({
         user: { id: '123', email: 'test@test.com' } as any,
-        token: 'test_token',
-        refreshToken: 'refresh_token',
         isAuthenticated: true,
       });
 
@@ -133,14 +110,12 @@ describe('Auth Store', () => {
       const state = useAuthStore.getState();
       expect(state.isAuthenticated).toBe(false);
       expect(state.user).toBeNull();
-      expect(state.token).toBeNull();
-      expect(state.refreshToken).toBeNull();
     });
 
     it('should handle logout even when service fails', async () => {
       useAuthStore.setState({
         isAuthenticated: true,
-        token: 'test_token',
+        user: { id: '123' } as any,
       });
 
       (authService.logout as jest.Mock).mockRejectedValue(new Error('Logout failed'));
@@ -150,7 +125,7 @@ describe('Auth Store', () => {
 
       const state = useAuthStore.getState();
       expect(state.isAuthenticated).toBe(false);
-      expect(state.token).toBeNull();
+      expect(state.user).toBeNull();
     });
   });
 
@@ -165,8 +140,6 @@ describe('Auth Store', () => {
       };
 
       (authService.getMe as jest.Mock).mockResolvedValue(mockUser);
-
-      useAuthStore.setState({ token: 'valid_token' });
 
       const store = useAuthStore.getState();
       await store.fetchUser();
@@ -184,12 +157,10 @@ describe('Auth Store', () => {
       };
 
       (authService.getMe as jest.Mock).mockRejectedValue(error);
-      (authService.refreshToken as jest.Mock).mockResolvedValue(null);
 
       useAuthStore.setState({
-        token: 'invalid_token',
-        refreshToken: 'refresh_token',
         isAuthenticated: true,
+        user: { id: '123' } as any,
       });
 
       const store = useAuthStore.getState();
@@ -200,52 +171,86 @@ describe('Auth Store', () => {
       expect(state.user).toBeNull();
     });
 
-    it('should not fetch if no token', async () => {
-      useAuthStore.setState({ token: null });
+    it('should handle 403 error', async () => {
+      const error = {
+        response: {
+          status: 403,
+        },
+      };
+
+      (authService.getMe as jest.Mock).mockRejectedValue(error);
 
       const store = useAuthStore.getState();
       await store.fetchUser();
 
-      expect(authService.getMe).not.toHaveBeenCalled();
+      const state = useAuthStore.getState();
+      expect(state.error).toBe('No tienes permisos para acceder a este recurso');
     });
   });
 
-  describe('refreshAccessToken', () => {
-    it('should refresh token successfully', async () => {
-      const mockResponse = {
-        access_token: 'new_access_token',
-        refresh_token: 'new_refresh_token',
+  describe('checkAuth', () => {
+    it('should return true when authenticated', async () => {
+      const mockUser = {
+        id: '123',
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'consultant',
+        status: 'active',
       };
 
-      (authService.refreshToken as jest.Mock).mockResolvedValue(mockResponse);
-
-      useAuthStore.setState({ refreshToken: 'old_refresh_token' });
+      (authService.getMe as jest.Mock).mockResolvedValue(mockUser);
 
       const store = useAuthStore.getState();
-      const newToken = await store.refreshAccessToken();
+      const result = await store.checkAuth();
 
-      expect(newToken).toBe('new_access_token');
-      expect(useAuthStore.getState().token).toBe('new_access_token');
+      expect(result).toBe(true);
+      expect(useAuthStore.getState().isAuthenticated).toBe(true);
     });
 
-    it('should return null if no refresh token', async () => {
-      useAuthStore.setState({ refreshToken: null });
+    it('should return false when not authenticated', async () => {
+      const error = {
+        response: {
+          status: 401,
+        },
+      };
+
+      (authService.getMe as jest.Mock).mockRejectedValue(error);
 
       const store = useAuthStore.getState();
-      const result = await store.refreshAccessToken();
+      const result = await store.checkAuth();
 
-      expect(result).toBeNull();
+      expect(result).toBe(false);
+      expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    });
+  });
+
+  describe('setUser', () => {
+    it('should set user and authentication state', () => {
+      const mockUser = {
+        id: '123',
+        email: 'test@example.com',
+      } as any;
+
+      const store = useAuthStore.getState();
+      store.setUser(mockUser);
+
+      const state = useAuthStore.getState();
+      expect(state.user).toEqual(mockUser);
+      expect(state.isAuthenticated).toBe(true);
     });
 
-    it('should handle refresh failure', async () => {
-      (authService.refreshToken as jest.Mock).mockRejectedValue(new Error('Invalid token'));
-
-      useAuthStore.setState({ refreshToken: 'invalid_token' });
+    it('should clear authentication when setting null user', () => {
+      useAuthStore.setState({
+        user: { id: '123' } as any,
+        isAuthenticated: true,
+      });
 
       const store = useAuthStore.getState();
-      const result = await store.refreshAccessToken();
+      store.setUser(null);
 
-      expect(result).toBeNull();
+      const state = useAuthStore.getState();
+      expect(state.user).toBeNull();
+      expect(state.isAuthenticated).toBe(false);
     });
   });
 

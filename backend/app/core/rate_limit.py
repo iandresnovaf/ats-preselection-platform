@@ -1,6 +1,7 @@
-"""Rate limiting middleware usando Redis."""
+"""Rate limiting middleware mejorado con protección por usuario e IP."""
 import time
-from typing import Optional
+import hashlib
+from typing import Optional, Dict, Tuple
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -9,7 +10,7 @@ from app.core.config import settings
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Middleware para rate limiting basado en IP."""
+    """Middleware para rate limiting basado en IP y usuario."""
     
     def __init__(
         self,
@@ -17,12 +18,19 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         redis_url: str = None,
         requests_per_minute: int = 60,
         auth_requests_per_minute: int = 5,
+        login_requests_per_minute: int = 3,  # Más restrictivo para login
+        user_requests_per_minute: int = 100,  # Límite por usuario autenticado
     ):
         super().__init__(app)
         self.redis_url = redis_url or settings.REDIS_URL
         self.requests_per_minute = requests_per_minute
         self.auth_requests_per_minute = auth_requests_per_minute
+        self.login_requests_per_minute = login_requests_per_minute
+        self.user_requests_per_minute = user_requests_per_minute
         self._redis: Optional[redis.Redis] = None
+        
+        # Tracking de IPs sospechosas para protección contra enumeration
+        self._suspicious_ips: Dict[str, Dict] = {}
     
     async def get_redis(self) -> redis.Redis:
         if self._redis is None:
@@ -34,7 +42,42 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
             return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip
         return request.client.host if request.client else "unknown"
+    
+    def get_user_id(self, request: Request) -> Optional[str]:
+        """Extrae user_id del token JWT si existe."""
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            # Extraer sub del token sin verificar (solo para rate limiting)
+            try:
+                import jwt
+                token = auth_header.split(" ")[1]
+                payload = jwt.decode(
+                    token, 
+                    settings.SECRET_KEY, 
+                    algorithms=[settings.ALGORITHM],
+                    options={"verify_exp": False}  # No verificar exp para rate limit
+                )
+                return payload.get("sub")
+            except Exception:
+                pass
+        return None
+    
+    def get_identifier(self, request: Request) -> Tuple[str, Optional[str]]:
+        """Obtiene identificador único (IP + user_id si está autenticado)."""
+        client_ip = self.get_client_ip(request)
+        user_id = self.get_user_id(request)
+        
+        # Si hay user_id, usar combinación de IP + user_id
+        if user_id:
+            # Hash para no exponer user_id directamente
+            identifier = hashlib.sha256(f"{client_ip}:{user_id}".encode()).hexdigest()[:16]
+            return identifier, user_id
+        
+        return client_ip, None
     
     def is_auth_endpoint(self, path: str) -> bool:
         """Verifica si es un endpoint de autenticación."""
@@ -45,23 +88,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         ]
         return any(path.startswith(p) for p in auth_paths)
     
-    async def dispatch(self, request: Request, call_next):
-        # Solo aplicar rate limiting a endpoints específicos
-        if not self.is_auth_endpoint(request.url.path):
-            return await call_next(request)
-        
-        client_ip = self.get_client_ip(request)
-        path = request.url.path
-        
-        # Key específica por IP y endpoint
-        key = f"ratelimit:{client_ip}:{path}"
-        
+    def is_login_endpoint(self, path: str) -> bool:
+        """Verifica si es el endpoint de login (más restrictivo)."""
+        return path.startswith("/api/v1/auth/login")
+    
+    async def check_rate_limit(
+        self, 
+        identifier: str, 
+        limit: int, 
+        window: int = 60,
+        key_prefix: str = "ratelimit"
+    ) -> Tuple[bool, int, int, int]:
+        """
+        Verifica si se ha excedido el rate limit.
+        Returns: (allowed, current_count, ttl, remaining)
+        """
         try:
             r = await self.get_redis()
-            
-            # Window de 1 minuto
-            window = 60
-            limit = self.auth_requests_per_minute
+            key = f"{key_prefix}:{identifier}"
             
             # Incrementar contador
             current = await r.incr(key)
@@ -70,33 +114,217 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if current == 1:
                 await r.expire(key, window)
             
-            # Verificar límite
             ttl = await r.ttl(key)
+            remaining = max(0, limit - current)
+            allowed = current <= limit
             
-            if current > limit:
-                # Retornar respuesta 429 directamente en lugar de lanzar excepción
+            return allowed, current, ttl, remaining
+            
+        except Exception:
+            # Si Redis falla, permitir el request (fail open)
+            return True, 0, 0, limit
+    
+    async def check_enumeration_protection(self, ip: str, identifier: str) -> bool:
+        """
+        Protección contra user enumeration attacks.
+        Detecta múltiples intentos de login con diferentes usuarios desde la misma IP.
+        """
+        try:
+            r = await self.get_redis()
+            key = f"enum_protection:{ip}"
+            
+            # Contar intentos de login únicos por IP
+            current = await r.incr(key)
+            
+            if current == 1:
+                await r.expire(key, 300)  # Ventana de 5 minutos
+            
+            # Si más de 10 intentos de login en 5 minutos desde la misma IP
+            if current > 10:
+                # Bloquear IP temporalmente
+                block_key = f"blocked_ip:{ip}"
+                await r.setex(block_key, 900, "blocked")  # 15 minutos
+                return False
+            
+            return True
+            
+        except Exception:
+            return True
+    
+    async def is_ip_blocked(self, ip: str) -> bool:
+        """Verifica si una IP está bloqueada."""
+        try:
+            r = await self.get_redis()
+            block_key = f"blocked_ip:{ip}"
+            blocked = await r.exists(block_key)
+            return bool(blocked)
+        except Exception:
+            return False
+    
+    async def dispatch(self, request: Request, call_next):
+        # Obtener identificadores
+        identifier, user_id = self.get_identifier(request)
+        client_ip = self.get_client_ip(request)
+        path = request.url.path
+        
+        # Verificar si IP está bloqueada
+        if await self.is_ip_blocked(client_ip):
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={
+                    "detail": "IP temporalmente bloqueada por actividad sospechosa.",
+                    "retry_after": 900
+                },
+                headers={"Retry-After": "900"}
+            )
+        
+        # Determinar límites según el endpoint
+        if self.is_login_endpoint(path):
+            # Login es más restrictivo
+            limit = self.login_requests_per_minute
+            window = 60
+            key_prefix = "ratelimit:login"
+            
+            # Verificar protección contra enumeration
+            if not await self.check_enumeration_protection(client_ip, identifier):
                 return JSONResponse(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     content={
-                        "detail": f"Demasiadas solicitudes. Intenta de nuevo en {ttl} segundos.",
+                        "detail": "Demasiados intentos de login. Intenta de nuevo en 15 minutos.",
+                        "retry_after": 900
+                    },
+                    headers={
+                        "Retry-After": "900",
+                        "X-RateLimit-Limit": str(limit),
+                        "X-RateLimit-Remaining": "0",
+                    }
+                )
+                
+        elif self.is_auth_endpoint(path):
+            limit = self.auth_requests_per_minute
+            window = 60
+            key_prefix = "ratelimit:auth"
+            
+        elif user_id:
+            # Usuario autenticado - límite más alto
+            limit = self.user_requests_per_minute
+            window = 60
+            key_prefix = "ratelimit:user"
+            
+        else:
+            # Requests generales
+            limit = self.requests_per_minute
+            window = 60
+            key_prefix = "ratelimit:ip"
+        
+        # Verificar rate limit
+        allowed, current, ttl, remaining = await self.check_rate_limit(
+            identifier, limit, window, key_prefix
+        )
+        
+        if not allowed:
+            # Loggear el evento
+            from app.core.security_logging import SecurityLogger
+            security_logger = SecurityLogger()
+            await security_logger.log_rate_limit_hit(request, key_prefix, ttl)
+            
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={
+                    "detail": f"Demasiadas solicitudes. Intenta de nuevo en {ttl} segundos.",
+                    "retry_after": ttl
+                },
+                headers={
+                    "Retry-After": str(ttl),
+                    "X-RateLimit-Limit": str(limit),
+                    "X-RateLimit-Remaining": "0",
+                    "X-RateLimit-Reset": str(int(time.time() + ttl))
+                }
+            )
+        
+        # Agregar headers de rate limit a la respuesta
+        response = await call_next(request)
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        response.headers["X-RateLimit-Reset"] = str(int(time.time() + ttl))
+        
+        return response
+
+
+class RateLimitByUser:
+    """Decorador para rate limiting específico por endpoint y usuario."""
+    
+    def __init__(
+        self, 
+        requests: int = 10, 
+        window: int = 60,
+        key_prefix: str = "custom"
+    ):
+        self.requests = requests
+        self.window = window
+        self.key_prefix = key_prefix
+    
+    async def __call__(self, request: Request) -> Optional[JSONResponse]:
+        """Verifica el rate limit. Retorna None si está permitido, JSONResponse si excede."""
+        from app.core.security_logging import SecurityLogger
+        
+        user_id = None
+        auth_header = request.headers.get("Authorization", "")
+        
+        if auth_header.startswith("Bearer "):
+            try:
+                import jwt
+                token = auth_header.split(" ")[1]
+                payload = jwt.decode(
+                    token, 
+                    settings.SECRET_KEY, 
+                    algorithms=[settings.ALGORITHM],
+                    options={"verify_exp": False}
+                )
+                user_id = payload.get("sub")
+            except Exception:
+                pass
+        
+        if not user_id:
+            # Si no hay usuario, usar IP
+            forwarded = request.headers.get("X-Forwarded-For")
+            user_id = forwarded.split(",")[0].strip() if forwarded else (
+                request.client.host if request.client else "unknown"
+            )
+        
+        key = f"{self.key_prefix}:{user_id}"
+        
+        try:
+            r = redis.from_url(settings.REDIS_URL, decode_responses=True)
+            current = await r.incr(key)
+            
+            if current == 1:
+                await r.expire(key, self.window)
+            
+            ttl = await r.ttl(key)
+            remaining = max(0, self.requests - current)
+            
+            if current > self.requests:
+                security_logger = SecurityLogger()
+                await security_logger.log_rate_limit_hit(request, self.key_prefix, ttl)
+                
+                return JSONResponse(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    content={
+                        "detail": f"Límite de {self.requests} solicitudes excedido.",
                         "retry_after": ttl
                     },
                     headers={
                         "Retry-After": str(ttl),
-                        "X-RateLimit-Limit": str(limit),
+                        "X-RateLimit-Limit": str(self.requests),
                         "X-RateLimit-Remaining": "0",
-                        "X-RateLimit-Reset": str(int(time.time() + ttl))
                     }
                 )
             
-            # Agregar headers de rate limit
-            response = await call_next(request)
-            response.headers["X-RateLimit-Limit"] = str(limit)
-            response.headers["X-RateLimit-Remaining"] = str(max(0, limit - current))
-            response.headers["X-RateLimit-Reset"] = str(int(time.time() + ttl))
-            
-            return response
+            await r.close()
             
         except Exception:
-            # Si Redis falla, permitir el request (fail open)
-            return await call_next(request)
+            # Fail open
+            pass
+        
+        return None

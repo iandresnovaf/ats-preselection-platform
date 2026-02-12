@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { Candidate, CandidateStatus, CandidateSource, CandidateFilters } from '@/types/candidates';
 import { CandidateCard } from '@/components/candidates/CandidateCard';
 import { Button } from '@/components/ui/button';
@@ -35,9 +36,25 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/store/auth';
 import { candidateService } from '@/services/candidates';
 import { CandidateForm } from '@/components/candidates/CandidateForm';
-import { EvaluationModal } from '@/components/evaluations/EvaluationModal';
 import { jobService } from '@/services/jobs';
 import { JobOpening } from '@/types/jobs';
+
+// Dynamic imports para mejor performance
+const EvaluationModal = dynamic(
+  () => import('@/components/evaluations/EvaluationModal'),
+  { 
+    ssr: false,
+    loading: () => (
+      <Dialog open={true}>
+        <DialogContent>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+);
 
 const statusOptions: { value: CandidateStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'Todos los estados' },

@@ -1,9 +1,70 @@
-"""Schemas Pydantic."""
+"""Schemas Pydantic con validaciones de seguridad."""
+import html
+import re
+import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
-from pydantic import BaseModel, Field, EmailStr, field_validator
+from pydantic import BaseModel, Field, EmailStr, field_validator, model_validator
+
+
+# ============== VALIDADORES DE SEGURIDAD ==============
+
+def sanitize_string(value: str, max_length: int = 1000) -> str:
+    """Sanitiza un string para prevenir XSS."""
+    if not value:
+        return value
+    
+    # Escapar HTML
+    value = html.escape(value)
+    
+    # Limitar longitud
+    if len(value) > max_length:
+        value = value[:max_length]
+    
+    return value
+
+
+def validate_uuid(value: str) -> str:
+    """Valida que un string sea un UUID válido."""
+    if not value:
+        return value
+    try:
+        uuid.UUID(str(value))
+        return str(value)
+    except ValueError:
+        raise ValueError("Formato UUID inválido")
+
+
+def validate_phone(value: str) -> str:
+    """Valida formato de teléfono internacional."""
+    if not value:
+        return value
+    
+    # Permitir solo dígitos, +, -, espacios y paréntesis
+    pattern = r'^[\d\s\-\+\(\)\.]+$'
+    if not re.match(pattern, value):
+        raise ValueError("Formato de teléfono inválido")
+    
+    # Limitar longitud (E.164 max 15 dígitos + formato)
+    if len(value) > 25:
+        raise ValueError("Número de teléfono demasiado largo")
+    
+    return value
+
+
+def validate_no_html(value: str) -> str:
+    """Verifica que no haya tags HTML."""
+    if not value:
+        return value
+    
+    # Detectar tags HTML
+    html_pattern = re.compile(r'<[^>]+>')
+    if html_pattern.search(value):
+        raise ValueError("El campo no debe contener HTML")
+    
+    return value
 
 
 # ============== CONFIGURATION SCHEMAS ==============
@@ -19,22 +80,61 @@ class ConfigCategory(str, Enum):
 class ConfigurationBase(BaseModel):
     """Base para configuraciones."""
     category: ConfigCategory
-    key: str = Field(..., min_length=1, max_length=100)
-    description: Optional[str] = None
+    key: str = Field(..., min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9_\-]+$')
+    description: Optional[str] = Field(None, max_length=500)
     is_json: bool = False
+    
+    @field_validator('key')
+    @classmethod
+    def validate_key(cls, v):
+        if not v:
+            raise ValueError("La clave no puede estar vacía")
+        if len(v) > 100:
+            raise ValueError("La clave no puede exceder 100 caracteres")
+        return v
+    
+    @field_validator('description')
+    @classmethod
+    def sanitize_description(cls, v):
+        if v:
+            return sanitize_string(v, max_length=500)
+        return v
 
 
 class ConfigurationCreate(ConfigurationBase):
     """Crear configuración."""
-    value: str = Field(..., min_length=1)
+    value: str = Field(..., min_length=1, max_length=10000)
     is_encrypted: bool = True
+    
+    @field_validator('value')
+    @classmethod
+    def validate_value(cls, v):
+        if not v:
+            raise ValueError("El valor no puede estar vacío")
+        if len(v) > 10000:
+            raise ValueError("El valor no puede exceder 10000 caracteres")
+        return v
 
 
 class ConfigurationUpdate(BaseModel):
     """Actualizar configuración."""
-    value: Optional[str] = None
-    description: Optional[str] = None
+    value: Optional[str] = Field(None, max_length=10000)
+    description: Optional[str] = Field(None, max_length=500)
     is_encrypted: Optional[bool] = None
+    
+    @field_validator('description')
+    @classmethod
+    def sanitize_description(cls, v):
+        if v:
+            return sanitize_string(v, max_length=500)
+        return v
+    
+    @field_validator('value')
+    @classmethod
+    def validate_value(cls, v):
+        if v and len(v) > 10000:
+            raise ValueError("El valor no puede exceder 10000 caracteres")
+        return v
 
 
 class ConfigurationResponse(ConfigurationBase):
@@ -53,28 +153,25 @@ class ConfigurationResponse(ConfigurationBase):
 
 class ConfigurationValue(BaseModel):
     """Valor simple de configuración."""
-    value: str
+    value: str = Field(..., max_length=10000)
 
 
 # ============== CONFIG GROUP SCHEMAS ==============
 
 class WhatsAppConfig(BaseModel):
     """Configuración de WhatsApp Business API."""
-    access_token: str = Field(..., description="Token de acceso de Meta")
-    phone_number_id: str = Field(..., description="ID del número de teléfono")
-    verify_token: str = Field(..., description="Token de verificación de webhook")
-    app_secret: Optional[str] = Field(None, description="App Secret para verificación")
-    business_account_id: Optional[str] = None
+    access_token: str = Field(..., description="Token de acceso de Meta", max_length=500)
+    phone_number_id: str = Field(..., description="ID del número de teléfono", max_length=50)
+    verify_token: str = Field(..., description="Token de verificación de webhook", max_length=100)
+    app_secret: Optional[str] = Field(None, description="App Secret para verificación", max_length=500)
+    business_account_id: Optional[str] = Field(None, max_length=50)
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "access_token": "EAAB...",
-                "phone_number_id": "123456789",
-                "verify_token": "webhook_verify_token",
-                "app_secret": "app_secret_optional",
-            }
-        }
+    @field_validator('access_token', 'verify_token', 'app_secret')
+    @classmethod
+    def validate_tokens(cls, v):
+        if v and len(v) > 1000:
+            raise ValueError("Token demasiado largo")
+        return v
 
 
 class ATSProvider(str, Enum):
@@ -85,95 +182,67 @@ class ATSProvider(str, Enum):
 
 class ZohoConfig(BaseModel):
     """Configuración de Zoho Recruit API."""
-    client_id: str
-    client_secret: str
-    refresh_token: str
-    redirect_uri: str = "http://localhost:8000/api/v1/zoho/callback"
+    client_id: str = Field(..., max_length=200)
+    client_secret: str = Field(..., max_length=500)
+    refresh_token: str = Field(..., max_length=500)
+    redirect_uri: str = Field(default="http://localhost:8000/api/v1/zoho/callback", max_length=500)
     
     # Mapeo de campos
-    job_id_field: str = "Job_Opening_ID"
-    candidate_id_field: str = "Candidate_ID"
-    stage_field: str = "Stage"
+    job_id_field: str = Field(default="Job_Opening_ID", max_length=100)
+    candidate_id_field: str = Field(default="Candidate_ID", max_length=100)
+    stage_field: str = Field(default="Stage", max_length=100)
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "client_id": "1000.xxxxx",
-                "client_secret": "client_secret_here",
-                "refresh_token": "refresh_token_here",
-                "redirect_uri": "http://localhost:8000/api/v1/zoho/callback",
-            }
-        }
+    @field_validator('redirect_uri')
+    @classmethod
+    def validate_redirect_uri(cls, v):
+        if v and not v.startswith(('http://', 'https://')):
+            raise ValueError("Redirect URI debe ser una URL válida")
+        return v
 
 
 class OdooConfig(BaseModel):
     """Configuración de Odoo API."""
-    url: str = Field(..., description="URL de la instancia Odoo (ej: https://miempresa.odoo.com)")
-    database: str = Field(..., description="Nombre de la base de datos")
-    username: str = Field(..., description="Email del usuario")
-    api_key: str = Field(..., description="API Key o Password")
+    url: str = Field(..., description="URL de la instancia Odoo", max_length=500)
+    database: str = Field(..., description="Nombre de la base de datos", max_length=100)
+    username: EmailStr = Field(..., description="Email del usuario")
+    api_key: str = Field(..., description="API Key o Password", max_length=500)
     
     # Mapeo de campos (Odoo usa modelos diferentes)
-    job_model: str = "hr.job"  # Modelo de puestos de trabajo
-    applicant_model: str = "hr.applicant"  # Modelo de candidatos
+    job_model: str = Field(default="hr.job", max_length=100)
+    applicant_model: str = Field(default="hr.applicant", max_length=100)
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "url": "https://miempresa.odoo.com",
-                "database": "miempresa_prod",
-                "username": "admin@miempresa.com",
-                "api_key": "api_key_o_password",
-            }
-        }
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v):
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError("URL debe comenzar con http:// o https://")
+        if len(v) > 500:
+            raise ValueError("URL demasiado larga")
+        return v
 
 
 class LLMConfig(BaseModel):
     """Configuración de LLM."""
-    provider: str = Field(default="openai", description="openai, anthropic, etc")
-    api_key: str
-    model: str = Field(default="gpt-4o-mini")
-    max_tokens: int = Field(default=2000)
+    provider: str = Field(default="openai", max_length=50)
+    api_key: str = Field(..., max_length=500)
+    model: str = Field(default="gpt-4o-mini", max_length=100)
+    max_tokens: int = Field(default=2000, ge=1, le=8000)
     temperature: float = Field(default=0.0, ge=0, le=2)
     
     # Versionado de prompts
-    prompt_version: str = "v1.0"
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "provider": "openai",
-                "api_key": "sk-...",
-                "model": "gpt-4o-mini",
-                "max_tokens": 2000,
-                "temperature": 0.0,
-            }
-        }
+    prompt_version: str = Field(default="v1.0", max_length=20)
 
 
 class EmailConfig(BaseModel):
     """Configuración de Email (SMTP)."""
-    provider: str = Field(default="smtp", description="smtp, sendgrid, mailgun")
-    smtp_host: str
-    smtp_port: int = 587
-    smtp_user: str
-    smtp_password: str
+    provider: str = Field(default="smtp", max_length=50)
+    smtp_host: str = Field(..., max_length=255)
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_user: str = Field(..., max_length=255)
+    smtp_password: str = Field(..., max_length=500)
     use_tls: bool = True
     default_from: EmailStr
-    default_from_name: str = "Top Management"
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "provider": "smtp",
-                "smtp_host": "smtp.gmail.com",
-                "smtp_port": 587,
-                "smtp_user": "noreply@example.com",
-                "smtp_password": "password",
-                "default_from": "noreply@example.com",
-                "default_from_name": "Top Management",
-            }
-        }
+    default_from_name: str = Field(default="Top Management", max_length=255)
 
 
 class SystemStatus(BaseModel):
@@ -184,39 +253,93 @@ class SystemStatus(BaseModel):
     zoho: Optional[bool] = None
     llm: Optional[bool] = None
     email: Optional[bool] = None
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "database": True,
-                "redis": True,
-                "whatsapp": None,
-                "zoho": None,
-                "llm": None,
-                "email": None,
-            }
-        }
 
 
 # ============== USER SCHEMAS ==============
 
 class UserBase(BaseModel):
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=255)
     full_name: str = Field(..., min_length=2, max_length=255)
-    phone: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=25)
+    
+    @field_validator('full_name')
+    @classmethod
+    def sanitize_and_validate_full_name(cls, v):
+        if not v or len(v.strip()) < 2:
+            raise ValueError("El nombre debe tener al menos 2 caracteres")
+        if len(v) > 255:
+            raise ValueError("El nombre no puede exceder 255 caracteres")
+        
+        # Validar que no contenga HTML
+        v = validate_no_html(v)
+        
+        # Sanitizar
+        v = sanitize_string(v, max_length=255)
+        
+        return v.strip()
+    
+    @field_validator('phone')
+    @classmethod
+    def validate_phone_number(cls, v):
+        if v:
+            return validate_phone(v)
+        return v
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
-    role: str = "consultant"
+    password: str = Field(..., min_length=8, max_length=128)
+    role: str = Field(default="consultant", max_length=50)
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("La contraseña debe tener al menos 8 caracteres")
+        if len(v) > 128:
+            raise ValueError("La contraseña no puede exceder 128 caracteres")
+        
+        # Verificar complejidad mínima
+        if not re.search(r'[A-Z]', v):
+            raise ValueError("La contraseña debe contener al menos una mayúscula")
+        if not re.search(r'[a-z]', v):
+            raise ValueError("La contraseña debe contener al menos una minúscula")
+        if not re.search(r'\d', v):
+            raise ValueError("La contraseña debe contener al menos un número")
+        
+        return v
+    
+    @field_validator('role')
+    @classmethod
+    def validate_role(cls, v):
+        allowed_roles = ['admin', 'consultant', 'viewer', 'manager']
+        if v not in allowed_roles:
+            raise ValueError(f"Rol no válido. Debe ser uno de: {', '.join(allowed_roles)}")
+        return v
 
 
 class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-    role: Optional[str] = None
-    status: Optional[str] = None
+    email: Optional[EmailStr] = Field(None, max_length=255)
+    full_name: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=25)
+    role: Optional[str] = Field(None, max_length=50)
+    status: Optional[str] = Field(None, max_length=50)
+    
+    @field_validator('full_name')
+    @classmethod
+    def sanitize_full_name(cls, v):
+        if v:
+            v = validate_no_html(v)
+            v = sanitize_string(v, max_length=255)
+            if len(v.strip()) < 2:
+                raise ValueError("El nombre debe tener al menos 2 caracteres")
+        return v.strip() if v else v
+    
+    @field_validator('phone')
+    @classmethod
+    def validate_phone_number(cls, v):
+        if v:
+            return validate_phone(v)
+        return v
 
 
 class UserResponse(UserBase):
@@ -247,10 +370,10 @@ class UserResponse(UserBase):
 # ============== AUTH SCHEMAS ==============
 
 class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
+    access_token: str = Field(..., max_length=2000)
+    refresh_token: str = Field(..., max_length=2000)
+    token_type: str = Field(default="bearer", max_length=20)
+    expires_in: int = Field(..., ge=0)
 
 
 class TokenPayload(BaseModel):
@@ -260,60 +383,158 @@ class TokenPayload(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+    email: EmailStr = Field(..., max_length=255)
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class PasswordChange(BaseModel):
-    current_password: str
-    new_password: str = Field(..., min_length=8)
+    current_password: str = Field(..., min_length=1, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)
+    
+    @field_validator('new_password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("La contraseña debe tener al menos 8 caracteres")
+        if len(v) > 128:
+            raise ValueError("La contraseña no puede exceder 128 caracteres")
+        if not re.search(r'[A-Z]', v):
+            raise ValueError("La contraseña debe contener al menos una mayúscula")
+        if not re.search(r'[a-z]', v):
+            raise ValueError("La contraseña debe contener al menos una minúscula")
+        if not re.search(r'\d', v):
+            raise ValueError("La contraseña debe contener al menos un número")
+        return v
 
 
 class EmailChange(BaseModel):
-    new_email: EmailStr
-    password: str
+    new_email: EmailStr = Field(..., max_length=255)
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
+    email: EmailStr = Field(..., max_length=255)
 
 
 class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str = Field(..., min_length=8)
+    token: str = Field(..., max_length=2000)
+    new_password: str = Field(..., min_length=8, max_length=128)
+    
+    @field_validator('new_password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("La contraseña debe tener al menos 8 caracteres")
+        if len(v) > 128:
+            raise ValueError("La contraseña no puede exceder 128 caracteres")
+        if not re.search(r'[A-Z]', v):
+            raise ValueError("La contraseña debe contener al menos una mayúscula")
+        if not re.search(r'[a-z]', v):
+            raise ValueError("La contraseña debe contener al menos una minúscula")
+        if not re.search(r'\d', v):
+            raise ValueError("La contraseña debe contener al menos un número")
+        return v
 
 
 # ============== JOB OPENING SCHEMAS ==============
 
 class JobOpeningBase(BaseModel):
     title: str = Field(..., min_length=3, max_length=255)
-    description: str
-    department: Optional[str] = None
-    location: Optional[str] = None
-    seniority: Optional[str] = None
-    sector: Optional[str] = None
+    description: str = Field(..., max_length=10000)
+    department: Optional[str] = Field(None, max_length=100)
+    location: Optional[str] = Field(None, max_length=200)
+    seniority: Optional[str] = Field(None, max_length=50)
+    sector: Optional[str] = Field(None, max_length=100)
+    
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v):
+        if not v or len(v.strip()) < 3:
+            raise ValueError("El título debe tener al menos 3 caracteres")
+        if len(v) > 255:
+            raise ValueError("El título no puede exceder 255 caracteres")
+        v = validate_no_html(v)
+        return sanitize_string(v, max_length=255)
+    
+    @field_validator('description')
+    @classmethod
+    def validate_description(cls, v):
+        if not v:
+            raise ValueError("La descripción es requerida")
+        if len(v) > 10000:
+            raise ValueError("La descripción no puede exceder 10000 caracteres")
+        return sanitize_string(v, max_length=10000)
+    
+    @field_validator('department', 'location', 'seniority', 'sector')
+    @classmethod
+    def sanitize_optional_fields(cls, v):
+        if v:
+            v = validate_no_html(v)
+            return sanitize_string(v, max_length=200)
+        return v
 
 
 class JobOpeningCreate(JobOpeningBase):
-    assigned_consultant_id: Optional[str] = None
+    assigned_consultant_id: Optional[str] = Field(None, max_length=50)
+    
+    @field_validator('assigned_consultant_id')
+    @classmethod
+    def validate_consultant_id(cls, v):
+        if v:
+            return validate_uuid(v)
+        return v
 
 
 class JobOpeningUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    department: Optional[str] = None
-    location: Optional[str] = None
-    seniority: Optional[str] = None
-    sector: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=10000)
+    department: Optional[str] = Field(None, max_length=100)
+    location: Optional[str] = Field(None, max_length=200)
+    seniority: Optional[str] = Field(None, max_length=50)
+    sector: Optional[str] = Field(None, max_length=100)
     is_active: Optional[bool] = None
-    status: Optional[str] = None
-    assigned_consultant_id: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=50)
+    assigned_consultant_id: Optional[str] = Field(None, max_length=50)
+    
+    @field_validator('title')
+    @classmethod
+    def validate_title(cls, v):
+        if v:
+            if len(v.strip()) < 3:
+                raise ValueError("El título debe tener al menos 3 caracteres")
+            v = validate_no_html(v)
+            return sanitize_string(v, max_length=255)
+        return v
+    
+    @field_validator('description')
+    @classmethod
+    def validate_description(cls, v):
+        if v:
+            if len(v) > 10000:
+                raise ValueError("La descripción no puede exceder 10000 caracteres")
+            return sanitize_string(v, max_length=10000)
+        return v
+    
+    @field_validator('department', 'location', 'seniority', 'sector')
+    @classmethod
+    def sanitize_optional_fields(cls, v):
+        if v:
+            v = validate_no_html(v)
+            return sanitize_string(v, max_length=200)
+        return v
+    
+    @field_validator('assigned_consultant_id')
+    @classmethod
+    def validate_consultant_id(cls, v):
+        if v:
+            return validate_uuid(v)
+        return v
 
 
 class JobOpeningResponse(JobOpeningBase):
     id: str
     assigned_consultant_id: Optional[str] = None
-    zoho_job_id: Optional[str] = None
+    zoho_job_id: Optional[str] = Field(None, max_length=100)
     is_active: bool
     status: str
     created_at: datetime
@@ -333,29 +554,82 @@ class JobOpeningResponse(JobOpeningBase):
 # ============== CANDIDATE SCHEMAS ==============
 
 class CandidateBase(BaseModel):
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    full_name: Optional[str] = None
+    email: Optional[EmailStr] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=25)
+    full_name: Optional[str] = Field(None, max_length=255)
+    
+    @field_validator('full_name')
+    @classmethod
+    def sanitize_full_name(cls, v):
+        if v:
+            v = validate_no_html(v)
+            return sanitize_string(v, max_length=255)
+        return v
+    
+    @field_validator('phone')
+    @classmethod
+    def validate_phone_number(cls, v):
+        if v:
+            return validate_phone(v)
+        return v
 
 
 class CandidateCreate(BaseModel):
-    job_opening_id: str
-    raw_data: Dict[str, Any]
-    source: str = "manual"
+    job_opening_id: str = Field(..., max_length=50)
+    raw_data: Dict[str, Any] = Field(..., max_length=100)
+    source: str = Field(default="manual", max_length=50)
+    
+    @field_validator('job_opening_id')
+    @classmethod
+    def validate_job_id(cls, v):
+        return validate_uuid(v)
+    
+    @field_validator('source')
+    @classmethod
+    def validate_source(cls, v):
+        allowed = ['manual', 'whatsapp', 'zoho', 'odoo', 'api', 'import']
+        if v not in allowed:
+            raise ValueError(f"Fuente no válida. Debe ser: {', '.join(allowed)}")
+        return v
+    
+    @field_validator('raw_data')
+    @classmethod
+    def validate_raw_data_size(cls, v):
+        import json
+        # Limitar tamaño de raw_data
+        data_str = json.dumps(v)
+        if len(data_str) > 50000:  # 50KB max
+            raise ValueError("Los datos raw no pueden exceder 50KB")
+        return v
 
 
 class CandidateUpdate(BaseModel):
-    status: Optional[str] = None
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    full_name: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=50)
+    email: Optional[EmailStr] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=25)
+    full_name: Optional[str] = Field(None, max_length=255)
+    
+    @field_validator('full_name')
+    @classmethod
+    def sanitize_full_name(cls, v):
+        if v:
+            v = validate_no_html(v)
+            return sanitize_string(v, max_length=255)
+        return v
+    
+    @field_validator('phone')
+    @classmethod
+    def validate_phone_number(cls, v):
+        if v:
+            return validate_phone(v)
+        return v
 
 
 class CandidateResponse(CandidateBase):
     id: str
     job_opening_id: str
     status: str
-    zoho_candidate_id: Optional[str] = None
+    zoho_candidate_id: Optional[str] = Field(None, max_length=100)
     is_duplicate: bool
     duplicate_of_id: Optional[str] = None
     created_at: datetime
@@ -377,16 +651,46 @@ class CandidateResponse(CandidateBase):
 
 class EvaluationCreate(BaseModel):
     """Crear evaluación (usado internamente)."""
-    candidate_id: str
+    candidate_id: str = Field(..., max_length=50)
     score: float = Field(..., ge=0, le=100)
-    decision: str
-    strengths: Optional[List[str]] = None
-    gaps: Optional[List[str]] = None
-    red_flags: Optional[List[str]] = None
-    evidence: Optional[str] = None
-    llm_provider: Optional[str] = None
-    llm_model: Optional[str] = None
-    prompt_version: Optional[str] = None
+    decision: str = Field(..., max_length=50)
+    strengths: Optional[List[str]] = Field(None, max_length=20)
+    gaps: Optional[List[str]] = Field(None, max_length=20)
+    red_flags: Optional[List[str]] = Field(None, max_length=20)
+    evidence: Optional[str] = Field(None, max_length=10000)
+    llm_provider: Optional[str] = Field(None, max_length=50)
+    llm_model: Optional[str] = Field(None, max_length=100)
+    prompt_version: Optional[str] = Field(None, max_length=20)
+    
+    @field_validator('candidate_id')
+    @classmethod
+    def validate_candidate_id(cls, v):
+        return validate_uuid(v)
+    
+    @field_validator('decision')
+    @classmethod
+    def validate_decision(cls, v):
+        allowed = ['approved', 'rejected', 'pending', 'maybe']
+        if v not in allowed:
+            raise ValueError(f"Decisión no válida. Debe ser: {', '.join(allowed)}")
+        return v
+    
+    @field_validator('strengths', 'gaps', 'red_flags')
+    @classmethod
+    def validate_list_fields(cls, v):
+        if v:
+            if len(v) > 20:
+                raise ValueError("Máximo 20 elementos permitidos")
+            # Sanitizar cada elemento
+            return [sanitize_string(item, max_length=500) for item in v]
+        return v
+    
+    @field_validator('evidence')
+    @classmethod
+    def sanitize_evidence(cls, v):
+        if v:
+            return sanitize_string(v, max_length=10000)
+        return v
 
 
 class EvaluationResponse(BaseModel):
@@ -424,17 +728,58 @@ class CandidateWithEvaluation(CandidateResponse):
 # ============== COMMUNICATION SCHEMAS ==============
 
 class CommunicationTemplate(BaseModel):
-    name: str
-    type: str  # whatsapp, email
-    subject: Optional[str] = None
-    body: str
-    variables: List[str] = []
+    name: str = Field(..., max_length=100)
+    type: str = Field(..., max_length=20)  # whatsapp, email
+    subject: Optional[str] = Field(None, max_length=255)
+    body: str = Field(..., max_length=10000)
+    variables: List[str] = Field(default=[], max_length=50)
+    
+    @field_validator('type')
+    @classmethod
+    def validate_type(cls, v):
+        allowed = ['whatsapp', 'email', 'sms']
+        if v not in allowed:
+            raise ValueError(f"Tipo no válido. Debe ser: {', '.join(allowed)}")
+        return v
+    
+    @field_validator('name', 'subject')
+    @classmethod
+    def sanitize_text(cls, v):
+        if v:
+            v = validate_no_html(v)
+            return sanitize_string(v, max_length=255)
+        return v
+    
+    @field_validator('body')
+    @classmethod
+    def sanitize_body(cls, v):
+        if v:
+            if len(v) > 10000:
+                raise ValueError("El cuerpo no puede exceder 10000 caracteres")
+            # Permitir cierto HTML para templates de email pero sanitizar
+            return sanitize_string(v, max_length=10000)
+        return v
 
 
 class SendCommunicationRequest(BaseModel):
-    candidate_id: str
-    template_name: str
-    variables: Dict[str, str] = {}
+    candidate_id: str = Field(..., max_length=50)
+    template_name: str = Field(..., max_length=100)
+    variables: Dict[str, str] = Field(default={}, max_length=50)
+    
+    @field_validator('candidate_id')
+    @classmethod
+    def validate_candidate_id(cls, v):
+        return validate_uuid(v)
+    
+    @field_validator('variables')
+    @classmethod
+    def validate_variables(cls, v):
+        if v:
+            if len(v) > 50:
+                raise ValueError("Máximo 50 variables permitidas")
+            # Sanitizar valores
+            return {k: sanitize_string(str(val), max_length=500) for k, val in v.items()}
+        return v
 
 
 # ============== JOB PAGINATION SCHEMAS ==============
@@ -443,8 +788,8 @@ class JobListResponse(BaseModel):
     """Respuesta paginada de ofertas."""
     items: List[JobOpeningResponse]
     total: int
-    page: int
-    page_size: int
+    page: int = Field(..., ge=1)
+    page_size: int = Field(..., ge=1, le=100)
     pages: int
     has_next: bool
     has_prev: bool
@@ -454,8 +799,8 @@ class CandidateListResponse(BaseModel):
     """Respuesta paginada de candidatos."""
     items: List[CandidateResponse]
     total: int
-    page: int
-    page_size: int
+    page: int = Field(..., ge=1)
+    page_size: int = Field(..., ge=1, le=100)
     pages: int
     has_next: bool
     has_prev: bool
@@ -465,8 +810,8 @@ class EvaluationListResponse(BaseModel):
     """Respuesta paginada de evaluaciones."""
     items: List[EvaluationResponse]
     total: int
-    page: int
-    page_size: int
+    page: int = Field(..., ge=1)
+    page_size: int = Field(..., ge=1, le=100)
     pages: int
     has_next: bool
     has_prev: bool
@@ -476,7 +821,15 @@ class EvaluationListResponse(BaseModel):
 
 class ChangeStatusRequest(BaseModel):
     """Request para cambiar estado."""
-    status: str
+    status: str = Field(..., max_length=50)
+    
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError("El estado es requerido")
+        v = validate_no_html(v)
+        return sanitize_string(v, max_length=50)
 
 
 class EvaluateRequest(BaseModel):
@@ -486,7 +839,15 @@ class EvaluateRequest(BaseModel):
 
 class CloseJobRequest(BaseModel):
     """Request para cerrar oferta."""
-    reason: Optional[str] = None
+    reason: Optional[str] = Field(None, max_length=500)
+    
+    @field_validator('reason')
+    @classmethod
+    def sanitize_reason(cls, v):
+        if v:
+            v = validate_no_html(v)
+            return sanitize_string(v, max_length=500)
+        return v
 
 
 # ============== RESPONSE SCHEMAS ==============
@@ -504,12 +865,26 @@ class PaginatedResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     """Respuesta simple con mensaje."""
-    message: str
+    message: str = Field(..., max_length=500)
     success: bool = True
+    
+    @field_validator('message')
+    @classmethod
+    def sanitize_message(cls, v):
+        return sanitize_string(v, max_length=500)
 
 
 class ErrorResponse(BaseModel):
     """Respuesta de error."""
-    detail: str
-    error_code: Optional[str] = None
+    detail: str = Field(..., max_length=1000)
+    error_code: Optional[str] = Field(None, max_length=50)
     field_errors: Optional[Dict[str, str]] = None
+    
+    @field_validator('detail')
+    @classmethod
+    def sanitize_detail(cls, v):
+        # No sanitizar el detail para mantener mensajes útiles
+        # pero limitar longitud
+        if v and len(v) > 1000:
+            v = v[:1000]
+        return v

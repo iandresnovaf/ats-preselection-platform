@@ -11,6 +11,10 @@ if DATABASE_URL.startswith("postgresql://"):
 
 engine = create_async_engine(
     DATABASE_URL,
+    pool_size=10,              # Conexiones mantenidas permanentemente
+    max_overflow=20,           # Conexiones adicionales bajo carga
+    pool_timeout=30,           # Segundos esperando conexión disponible
+    pool_recycle=1800,         # Reciclar conexiones cada 30 minutos
     echo=settings.DEBUG,
     future=True,
 )

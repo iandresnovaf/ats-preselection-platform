@@ -1,7 +1,10 @@
 import axios, { AxiosInstance } from 'axios';
 import { LoginCredentials, LoginResponse, User } from '@/types/auth';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+// Usar el proxy de Next.js para evitar problemas de CORS y cookies cross-origin
+const API_BASE_URL = typeof window !== 'undefined'
+  ? '/api/v1'  // Client-side: usar proxy de Next.js
+  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1');  // Server-side
 
 class AuthService {
   private client: AxiosInstance;
@@ -12,15 +15,8 @@ class AuthService {
       headers: {
         'Content-Type': 'application/json',
       },
-    });
-
-    // Request interceptor to add token
-    this.client.interceptors.request.use((config) => {
-      const token = localStorage.getItem('access_token');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
+      // Importante: incluir credenciales para que las cookies httpOnly se envíen
+      withCredentials: true,
     });
   }
 
@@ -30,8 +26,8 @@ class AuthService {
   }
 
   async logout(): Promise<void> {
-    const refreshToken = localStorage.getItem('refresh_token');
-    await this.client.post('/auth/logout', { refresh_token: refreshToken });
+    // El backend eliminará las cookies httpOnly
+    await this.client.post('/auth/logout');
   }
 
   async getMe(): Promise<User> {
@@ -39,23 +35,10 @@ class AuthService {
     return response.data;
   }
 
-  async refreshToken(refreshToken: string): Promise<{ access_token: string; refresh_token: string }> {
-    const response = await this.client.post('/auth/refresh', { refresh_token: refreshToken });
-    return response.data;
-  }
-
-  isTokenValid(): boolean {
-    const token = localStorage.getItem('access_token');
-    if (!token) return false;
-    
-    try {
-      // Basic JWT payload check (not validation, just structure)
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const exp = payload.exp * 1000; // Convert to milliseconds
-      return Date.now() < exp;
-    } catch {
-      return false;
-    }
+  async refreshToken(): Promise<void> {
+    // El backend refresca automáticamente usando la cookie httpOnly
+    // No necesitamos enviar el refresh token manualmente
+    await this.client.post('/auth/refresh');
   }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {

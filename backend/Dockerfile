@@ -1,23 +1,32 @@
-FROM python:3.11-slim
+# Build stage
+FROM python:3.12-slim as builder
+
+WORKDIR /app
+RUN pip install --user --no-cache-dir pipenv
+
+COPY Pipfile Pipfile.lock ./
+RUN pipenv requirements > requirements.txt
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Production stage
+FROM python:3.12-slim
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /app
 
-# Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
-    gcc \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /root/.local /home/appuser/.local
+COPY --chown=appuser:appuser . .
 
-# Copiar requirements e instalar
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PATH=/home/appuser/.local/bin:$PATH
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Copiar código
-COPY . .
-
-# Crear directorio para uploads
-RUN mkdir -p uploads
+USER appuser
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

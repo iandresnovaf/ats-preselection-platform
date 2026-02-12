@@ -17,6 +17,7 @@ from app.schemas import (
     EmailConfig,
 )
 from app.core.security import encrypt_value, decrypt_value
+from app.core.cache import cache
 
 
 class ConfigurationService:
@@ -24,6 +25,63 @@ class ConfigurationService:
     
     def __init__(self, db: AsyncSession):
         self.db = db
+    
+    async def get_config(self, category: str, key: str) -> Optional[str]:
+        """
+        Obtener configuración con cache.
+        
+        Args:
+            category: Categoría de la configuración
+            key: Clave de la configuración
+            
+        Returns:
+            Valor descifrado de la configuración o None
+        """
+        cache_key = f"config:{category}:{key}"
+        
+        # Intentar obtener del cache
+        cached = await cache.get(cache_key)
+        if cached is not None:
+            return cached
+        
+        # Obtener de base de datos
+        value = await self._get_from_db(category, key)
+        
+        # Guardar en cache (5 minutos por defecto)
+        if value is not None:
+            await cache.set(cache_key, value, ttl=300)
+        
+        return value
+    
+    async def _get_from_db(self, category: str, key: str) -> Optional[str]:
+        """Obtener valor de configuración desde la base de datos."""
+        try:
+            # Convertir string a ConfigCategory enum si es necesario
+            cat_value = category.value if hasattr(category, 'value') else category
+            
+            result = await self.db.execute(
+                select(Configuration).where(
+                    and_(
+                        Configuration.category == cat_value,
+                        Configuration.key == key
+                    )
+                )
+            )
+            config = result.scalar_one_or_none()
+            
+            if not config:
+                return None
+            
+            if config.is_encrypted:
+                return decrypt_value(config.value_encrypted)
+            return config.value_encrypted
+            
+        except Exception:
+            return None
+    
+    async def invalidate_config_cache(self, category: str, key: str):
+        """Invalidar cache de una configuración específica."""
+        await cache.delete(f"config:{category}:{key}")
     
     async def get(self, category: ConfigCategory, key: str) -> Optional[Configuration]:
         """Obtener una configuración por categoría y clave."""
@@ -58,9 +116,9 @@ class ConfigurationService:
             return None
     
     async def set(
-        self, 
-        category: ConfigCategory, 
-        key: str, 
+        self,
+        category: ConfigCategory,
+        key: str,
         value: str,
         description: Optional[str] = None,
         is_encrypted: bool = True,
@@ -70,7 +128,7 @@ class ConfigurationService:
         """Crear o actualizar una configuración."""
         # Buscar existente
         existing = await self.get(category, key)
-        
+
         if existing:
             # Actualizar
             if is_encrypted:
@@ -84,6 +142,8 @@ class ConfigurationService:
             if updated_by:
                 existing.updated_by = updated_by
             await self.db.flush()
+            # Invalidar cache después de actualizar
+            await self.invalidate_config_cache(category.value, key)
             return existing
         else:
             # Crear nueva
@@ -91,7 +151,7 @@ class ConfigurationService:
                 encrypted_value = encrypt_value(value)
             else:
                 encrypted_value = value
-            
+
             config = Configuration(
                 category=category.value,
                 key=key,
@@ -134,6 +194,8 @@ class ConfigurationService:
         if config:
             await self.db.delete(config)
             await self.db.flush()
+            # Invalidar cache después de eliminar
+            await self.invalidate_config_cache(category.value, key)
             return True
         return False
     

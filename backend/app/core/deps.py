@@ -1,5 +1,5 @@
 """Dependencias de FastAPI."""
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,17 +12,21 @@ security = HTTPBearer()
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Obtener usuario actual desde token JWT."""
+    """Obtener usuario actual desde cookie httpOnly access_token."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Credenciales inválidas",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    token = credentials.credentials
+    # Leer token de cookie httpOnly
+    token = request.cookies.get("access_token")
+    if not token:
+        raise credentials_exception
+    
     payload = decode_token(token)
     
     if payload is None:

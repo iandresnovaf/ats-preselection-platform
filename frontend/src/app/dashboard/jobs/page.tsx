@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { JobOpening, JobStatus, JobFilters } from '@/types/jobs';
 import { JobCard } from '@/components/jobs/JobCard';
 import { Button } from '@/components/ui/button';
@@ -34,7 +35,19 @@ import { Plus, Search, Loader2, Briefcase, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/store/auth';
 import { jobService } from '@/services/jobs';
-import { JobForm } from '@/components/jobs/JobForm';
+
+// Dynamic import para JobForm (modal pesado)
+const JobForm = dynamic(
+  () => import('@/components/jobs/JobForm'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
+);
 
 const statusOptions: { value: JobStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'Todos los estados' },
