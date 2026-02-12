@@ -8,40 +8,62 @@ Plataforma de preselección automatizada de candidatos para Top Management.
 > 
 > 🔐 **Seguridad**: A+ (95/100) | ⚡ **Performance**: B+ (85/100)
 
-## 🚀 Características
+## 🚀 Productos
 
-### Core (v1.0.0)
-- **Autenticación JWT** con roles (Super Admin, Consultor, Viewer)
-- **Gestión de Ofertas** de trabajo (Job Openings)
-- **Ingesta de CVs** vía webhook y cron jobs
-- **Evaluación con IA** (scoring 0-100%)
-- **Integración Zoho Recruit** (sync bidireccional)
-- **Comunicación** vía WhatsApp Business API y Email
-- **Anti-duplicados** por email/teléfono
-- **Landing pages** para candidatos con tokens
-- **Panel de configuración** para APIs
+### 🤖 RHMatch - Sistema de Matching IA (v1.1.0)
+**Motor de inteligencia artificial** para análisis de candidatos.
 
-### Nuevo: Sistema de Matching IA (v1.1.0) 🤖
+**Funcionalidades:**
 - **Matching CV-to-Job** con OpenAI GPT-4o-mini
-- **Score de match** 0-100 con breakdown detallado:
-  - Skills match (%)
-  - Experience match (%)  
-  - Education match (%)
-- **Recomendaciones automáticas**: PROCEED (>75) / REVIEW (50-75) / REJECT (<50)
-- **Fortalezas y Gaps** identificados automáticamente
+- **Score de match** 0-100 con breakdown detallado (skills, experience, education)
+- **Recomendaciones automáticas**: PROCEED / REVIEW / REJECT
 - **Preguntas de entrevista** generadas por IA (3-15 personalizadas)
+- **Análisis de CVs** automático (PDF, DOCX, imágenes)
 - **Upload de PDF** para Job Description
 - **Requirements extendidos**: skills, experiencia, educación, salario
 - **Vista comparativa** Job vs Candidatos ordenados por score
-- **Cache inteligente** (24h) - ahorro ~80% en costos de IA
-- **Rate limiting** por usuario (evita costos excesivos)
+- **Cache inteligente** (24h) - ahorro ~80% en costos
 
-### RH Tools (v1.1.0)
-- **Gestión de Clientes** (empresas)
-- **Pipeline de reclutamiento** visual (Kanban)
-- **Submissions** de candidatos a clientes
-- **Documentos** con OCR (PDF, DOCX, imágenes)
-- **Procesamiento de CVs** automático
+**Modos de uso:**
+- ✅ **Standalone** - Base de datos propia, sin CRM externo
+- ✅ **+ Zoho Recruit** - Integración bidireccional
+- ✅ **+ Odoo HR** - Integración con módulo de reclutamiento
+- ✅ **+ RHTools** - Suite completa (recomendado)
+
+### 🛠️ RHTools - Sistema de Gestión (v1.1.0)
+**CRM y operaciones** para consultoras de reclutamiento.
+
+**Funcionalidades:**
+- **Gestión de Clientes** (empresas contratantes)
+- **Pipeline Visual** - Kanban de candidatos por etapas
+- **Submissions** - Envío de candidatos a clientes
+- **Documentos** - Almacenamiento con OCR
+- **Procesamiento de CVs** - Extracción automática de datos
+
+> **Nota**: RHTools puede usarse **independientemente** o **integrado** con RHMatch para tener análisis IA automático en el pipeline.
+
+---
+
+## 🏗️ Arquitectura
+
+RHMatch y RHTools son **productos independientes** que se pueden usar:
+1. **RHMatch solo** - Sistema de IA autónomo
+2. **RHTools solo** - CRM de reclutamiento tradicional
+3. **RHMatch + RHTools** - Suite completa con IA (recomendado)
+4. **RHMatch + Zoho/Odoo** - IA sobre tu CRM existente
+
+Ver documentación completa: [ARCHITECTURE.md](ARCHITECTURE.md)
+
+---
+
+## ✨ Características Adicionales
+
+### Core (v1.0.0)
+- **Autenticación JWT** con roles (Super Admin, Consultor, Viewer)
+- **Comunicación** vía WhatsApp Business API y Email
+- **Anti-duplicados** por email/teléfono
+- **Landing pages** para candidatos
+- **Panel de configuración** para APIs
 
 ## 🛠️ Stack Tecnológico
 
