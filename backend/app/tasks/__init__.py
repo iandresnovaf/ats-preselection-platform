@@ -15,6 +15,7 @@ celery_app = Celery(
         "app.tasks.evaluation",
         "app.tasks.notifications",
         "app.tasks.sync",
+        "app.tasks.rhtools",
     ],
 )
 
@@ -37,6 +38,7 @@ celery_app.conf.task_routes = {
     "app.tasks.evaluation.*": {"queue": "evaluation"},
     "app.tasks.notifications.*": {"queue": "notifications"},
     "app.tasks.sync.*": {"queue": "sync"},
+    "app.tasks.rhtools.*": {"queue": "cv_processing"},
 }
 
 # Retry configuration

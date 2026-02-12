@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import get_current_active_user, require_consultant
+from app.core.deps import get_current_active_user, require_consultant, require_viewer
 from app.models import User, CandidateStatus
 from app.schemas import (
     CandidateCreate,
@@ -32,7 +32,7 @@ async def list_candidates(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(20, ge=1, le=100, description="Tamaño de página"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_viewer),  # VIEWER, CONSULTANT o ADMIN pueden ver
 ):
     """Listar candidatos con filtros y paginación."""
     candidate_service = CandidateService(db)
@@ -86,7 +86,7 @@ async def create_candidate(
 async def get_candidate(
     candidate_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_viewer),  # VIEWER, CONSULTANT o ADMIN pueden ver
 ):
     """Obtener candidato por ID con sus evaluaciones."""
     candidate_service = CandidateService(db)

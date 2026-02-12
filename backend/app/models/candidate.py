@@ -65,3 +65,4 @@ class Candidate(Base):
     evaluations = relationship("Evaluation", back_populates="candidate")
     decisions = relationship("CandidateDecision", back_populates="candidate")
     communications = relationship("Communication", back_populates="candidate")
+    documents = relationship("Document", back_populates="candidate")

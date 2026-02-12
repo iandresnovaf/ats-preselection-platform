@@ -58,7 +58,7 @@ from app.main import app
 from app.core.database import Base, get_db
 from app.core.auth import get_password_hash, create_access_token, create_refresh_token
 from app.core.config import Settings
-from app.models import User, UserRole, UserStatus, Configuration
+from app.models import User, UserRole, UserStatus, Configuration, Candidate, JobOpening
 from app.schemas import UserCreate
 from app.services.user_service import UserService
 
@@ -172,6 +172,18 @@ def test_consultant_data(test_password) -> dict:
 
 
 @pytest.fixture
+def test_viewer_data(test_password) -> dict:
+    """Return test viewer user data."""
+    return {
+        "email": "viewer@test.com",
+        "full_name": "Test Viewer",
+        "password": test_password,
+        "role": "viewer",
+        "status": "active",
+    }
+
+
+@pytest.fixture
 def test_pending_user_data(test_password) -> dict:
     """Return test pending user data."""
     return {
@@ -221,6 +233,22 @@ async def test_consultant(db_session, test_consultant_data) -> User:
         hashed_password=get_password_hash(test_consultant_data["password"]),
         full_name=test_consultant_data["full_name"],
         role=UserRole.CONSULTANT,
+        status=UserStatus.ACTIVE,
+    )
+    db_session.add(user)
+    await db_session.flush()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+async def test_viewer(db_session, test_viewer_data) -> User:
+    """Create a test viewer user (solo lectura)."""
+    user = User(
+        email=test_viewer_data["email"],
+        hashed_password=get_password_hash(test_viewer_data["password"]),
+        full_name=test_viewer_data["full_name"],
+        role=UserRole.VIEWER,
         status=UserStatus.ACTIVE,
     )
     db_session.add(user)
@@ -282,6 +310,12 @@ def consultant_token(test_consultant) -> str:
 
 
 @pytest.fixture
+def viewer_token(test_viewer) -> str:
+    """Generate an access token for the test viewer."""
+    return create_access_token(data={"sub": str(test_viewer.id)})
+
+
+@pytest.fixture
 def pending_user_token(test_pending_user) -> str:
     """Generate an access token for the test pending user."""
     return create_access_token(data={"sub": str(test_pending_user.id)})
@@ -324,6 +358,12 @@ def consultant_headers(consultant_token) -> dict:
 
 
 @pytest.fixture
+def viewer_headers(viewer_token) -> dict:
+    """Return authorization headers for viewer."""
+    return {"Authorization": f"Bearer {viewer_token}"}
+
+
+@pytest.fixture
 def pending_user_headers(pending_user_token) -> dict:
     """Return authorization headers for pending user."""
     return {"Authorization": f"Bearer {pending_user_token}"}
@@ -333,6 +373,46 @@ def pending_user_headers(pending_user_token) -> dict:
 def inactive_user_headers(inactive_user_token) -> dict:
     """Return authorization headers for inactive user."""
     return {"Authorization": f"Bearer {inactive_user_token}"}
+
+
+# ============== Job & Candidate Fixtures ==============
+
+@pytest.fixture
+async def test_job(db_session, test_consultant) -> JobOpening:
+    """Create a test job opening."""
+    job = JobOpening(
+        title="Test Software Engineer",
+        description="Test job description for a software engineer position",
+        department="Engineering",
+        location="Remote",
+        seniority="Senior",
+        sector="Technology",
+        is_active=True,
+        status="active",
+        assigned_consultant_id=test_consultant.id,
+    )
+    db_session.add(job)
+    await db_session.flush()
+    await db_session.refresh(job)
+    return job
+
+
+@pytest.fixture
+async def test_candidate(db_session, test_job) -> Candidate:
+    """Create a test candidate."""
+    candidate = Candidate(
+        job_opening_id=test_job.id,
+        email="candidate@test.com",
+        full_name="Test Candidate",
+        phone="+1234567890",
+        status="new",
+        source="manual",
+        raw_data={"name": "Test Candidate", "email": "candidate@test.com"},
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+    await db_session.refresh(candidate)
+    return candidate
 
 
 # ============== Service Fixtures ==============

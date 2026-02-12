@@ -1,9 +1,12 @@
-"""API endpoints de autenticación con logging de seguridad."""
+"""API endpoints de autenticación con logging de seguridad y rate limiting."""
 from datetime import timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -32,6 +35,9 @@ from app.services.user_service import UserService
 # Logger de seguridad
 security_logger = SecurityLogger()
 
+# Rate Limiter - 5 intentos por minuto para auth
+limiter = Limiter(key_func=get_remote_address)
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
@@ -45,9 +51,10 @@ COOKIE_SETTINGS = {
 
 
 @router.post("/login")
+@limiter.limit("5/minute")
 async def login(
-    credentials: LoginRequest,
     request: Request,
+    credentials: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
@@ -109,7 +116,81 @@ async def login(
     }
 
 
+@router.post("/register")
+@limiter.limit("5/minute")
+async def register(
+    request: Request,
+    credentials: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Registrar nuevo usuario. Setea cookies httpOnly."""
+    user_service = UserService(db)
+    
+    # Verificar si el email ya existe
+    existing = await user_service.get_by_email(credentials.email)
+    if existing:
+        # Respuesta genérica para prevenir user enumeration
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se pudo completar el registro",
+        )
+    
+    # Crear usuario
+    from app.schemas import UserCreate
+    user_data = UserCreate(
+        email=credentials.email,
+        password=credentials.password,
+        full_name=credentials.email.split('@')[0],  # Nombre temporal
+        role="consultant"
+    )
+    
+    try:
+        user = await user_service.create_user(user_data)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    
+    # Generar tokens
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id)},
+        expires_delta=access_token_expires,
+    )
+    
+    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    
+    # Setear cookies httpOnly
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        **COOKIE_SETTINGS
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        **COOKIE_SETTINGS
+    )
+    
+    return {
+        "success": True,
+        "message": "Usuario registrado exitosamente",
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "status": user.status.value,
+        }
+    }
+
+
 @router.post("/refresh")
+@limiter.limit("5/minute")
 async def refresh_token(
     request: Request,
     response: Response,

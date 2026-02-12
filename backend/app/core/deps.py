@@ -63,7 +63,7 @@ async def get_current_active_user(
 async def require_admin(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """Requerir rol de administrador."""
+    """Requerir rol de administrador (super_admin)."""
     if current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -75,10 +75,27 @@ async def require_admin(
 async def require_consultant(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
-    """Requerir rol de consultor o admin."""
+    """Requerir rol de consultor o admin (puede crear/editar/eliminar)."""
     if current_user.role not in [UserRole.CONSULTANT, UserRole.SUPER_ADMIN]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Se requieren permisos de consultor",
+        )
+    return current_user
+
+
+async def require_viewer(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """Requerir rol de viewer, consultor o admin (solo lectura permitida).
+    
+    El rol VIEWER puede:
+    - Ver jobs, candidates, submissions
+    - NO puede crear/editar/eliminar
+    """
+    if current_user.role not in [UserRole.VIEWER, UserRole.CONSULTANT, UserRole.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de visualización",
         )
     return current_user

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import get_current_active_user, require_consultant
+from app.core.deps import get_current_active_user, require_consultant, require_viewer
 from app.models import User
 from app.schemas import (
     JobOpeningCreate, 
@@ -28,7 +28,7 @@ async def list_jobs(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(20, ge=1, le=100, description="Tamaño de página"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_viewer),  # VIEWER, CONSULTANT o ADMIN pueden ver
 ):
     """Listar ofertas de trabajo con filtros y paginación."""
     job_service = JobService(db)
@@ -72,7 +72,7 @@ async def create_job(
 async def get_job(
     job_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_viewer),  # VIEWER, CONSULTANT o ADMIN pueden ver
 ):
     """Obtener oferta de trabajo por ID."""
     job_service = JobService(db)
@@ -152,7 +152,7 @@ async def get_job_candidates(
     page: int = Query(1, ge=1, description="Número de página"),
     page_size: int = Query(20, ge=1, le=100, description="Tamaño de página"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(require_viewer),  # VIEWER, CONSULTANT o ADMIN pueden ver
 ):
     """Obtener candidatos de una oferta de trabajo."""
     job_service = JobService(db)

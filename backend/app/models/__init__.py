@@ -17,6 +17,7 @@ from app.core.database import Base
 class UserRole(str, Enum):
     SUPER_ADMIN = "super_admin"
     CONSULTANT = "consultant"
+    VIEWER = "viewer"  # Solo lectura - puede ver jobs, candidates, submissions
 
 
 class UserStatus(str, Enum):
@@ -76,6 +77,7 @@ class Configuration(Base):
 from app.models.job import JobOpening, JobStatus
 from app.models.candidate import Candidate, CandidateStatus
 from app.models.evaluation import Evaluation
+from app.models.rhtools import Document, DocumentTextExtraction, ResumeParse
 
 
 class CandidateDecision(Base):

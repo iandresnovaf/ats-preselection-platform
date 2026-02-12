@@ -10,7 +10,9 @@ export type CandidateStatus =
 export type CandidateSource = 
   | 'email' 
   | 'manual' 
-  | 'zoho' 
+  | 'zoho'
+  | 'odoo'
+  | 'rhtools'
   | 'linkedin' 
   | 'referral' 
   | 'other';

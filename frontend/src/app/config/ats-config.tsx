@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Loader2, TestTube, Database } from "lucide-react";
 
 interface ATSConfig {
-  provider: "zoho" | "odoo";
+  provider: "zoho" | "odoo" | "rhtools";
   // Zoho fields
   clientId?: string;
   clientSecret?: string;
@@ -21,6 +21,14 @@ interface ATSConfig {
   database?: string;
   username?: string;
   apiKey?: string;
+  // RHTools fields
+  apiUrl?: string;
+  apiKey?: string;
+  clientId?: string;
+  webhookSecret?: string;
+  jobIdField?: string;
+  candidateIdField?: string;
+  statusField?: string;
 }
 
 export function ATSConfigForm() {
@@ -29,6 +37,9 @@ export function ATSConfigForm() {
     redirectUri: "http://localhost:8000/api/v1/zoho/callback",
     jobModel: "hr.job",
     applicantModel: "hr.applicant",
+    jobIdField: "job_id",
+    candidateIdField: "candidate_id",
+    statusField: "status",
   });
   const [isLoading, setIsLoading] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -40,9 +51,14 @@ export function ATSConfigForm() {
     try {
       // TODO: Save to backend
       localStorage.setItem("ats_config", JSON.stringify(config));
+      const providerName = config.provider === "zoho" 
+        ? "Zoho Recruit" 
+        : config.provider === "odoo" 
+        ? "Odoo" 
+        : "RHTools";
       toast({
         title: "Éxito",
-        description: `Configuración de ${config.provider === "zoho" ? "Zoho Recruit" : "Odoo"} guardada`,
+        description: `Configuración de ${providerName} guardada`,
       });
     } catch (error) {
       toast({
@@ -60,9 +76,14 @@ export function ATSConfigForm() {
     try {
       // TODO: Test connection with backend
       await new Promise((resolve) => setTimeout(resolve, 1500));
+      const providerName = config.provider === "zoho" 
+        ? "Zoho Recruit" 
+        : config.provider === "odoo" 
+        ? "Odoo" 
+        : "RHTools";
       toast({
         title: "Éxito",
-        description: `Conexión con ${config.provider === "zoho" ? "Zoho Recruit" : "Odoo"} exitosa`,
+        description: `Conexión con ${providerName} exitosa`,
       });
     } catch (error) {
       toast({
@@ -79,7 +100,7 @@ export function ATSConfigForm() {
     <div className="space-y-6">
       <div className="space-y-2">
         <Label>Proveedor de ATS</Label>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <Card
             className={`cursor-pointer transition-all ${
               config.provider === "zoho"
@@ -117,11 +138,122 @@ export function ATSConfigForm() {
               </div>
             </CardContent>
           </Card>
+
+          <Card
+            className={`cursor-pointer transition-all ${
+              config.provider === "rhtools"
+                ? "border-primary ring-2 ring-primary/20"
+                : "hover:border-muted-foreground/50"
+            }`}
+            onClick={() => setConfig({ ...config, provider: "rhtools" })}
+          >
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="h-10 w-10 rounded bg-blue-100 flex items-center justify-center">
+                <span className="text-blue-700 font-bold text-lg">RH</span>
+              </div>
+              <div>
+                <p className="font-medium">RHTools</p>
+                <p className="text-xs text-muted-foreground">ATS propio (en desarrollo)</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {config.provider === "zoho" ? (
+        {config.provider === "rhtools" ? (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="apiUrl">URL de API RHTools</Label>
+              <Input
+                id="apiUrl"
+                value={config.apiUrl || ""}
+                onChange={(e) => setConfig({ ...config, apiUrl: e.target.value })}
+                placeholder="https://api.rhtools.com/v1"
+              />
+              <p className="text-sm text-muted-foreground">
+                URL base de la API de RHTools
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="clientId">Client ID</Label>
+              <Input
+                id="clientId"
+                value={config.clientId || ""}
+                onChange={(e) => setConfig({ ...config, clientId: e.target.value })}
+                placeholder="rh_client_xxx"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="apiKey">API Key</Label>
+              <Input
+                id="apiKey"
+                type="password"
+                value={config.apiKey || ""}
+                onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                placeholder="••••••••"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="webhookSecret">Webhook Secret (opcional)</Label>
+              <Input
+                id="webhookSecret"
+                type="password"
+                value={config.webhookSecret || ""}
+                onChange={(e) => setConfig({ ...config, webhookSecret: e.target.value })}
+                placeholder="Para verificar webhooks entrantes"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="jobIdField">Campo Job ID</Label>
+                <Input
+                  id="jobIdField"
+                  value={config.jobIdField || "job_id"}
+                  onChange={(e) => setConfig({ ...config, jobIdField: e.target.value })}
+                  placeholder="job_id"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="candidateIdField">Campo Candidate ID</Label>
+                <Input
+                  id="candidateIdField"
+                  value={config.candidateIdField || "candidate_id"}
+                  onChange={(e) => setConfig({ ...config, candidateIdField: e.target.value })}
+                  placeholder="candidate_id"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="statusField">Campo Status</Label>
+                <Input
+                  id="statusField"
+                  value={config.statusField || "status"}
+                  onChange={(e) => setConfig({ ...config, statusField: e.target.value })}
+                  placeholder="status"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-blue-50 rounded-lg">
+              <p className="text-sm text-blue-700">
+                <strong>RHTools - ATS Propio</strong>
+              </p>
+              <p className="text-sm text-blue-600 mt-2">
+                RHTools es un ATS personalizado que estamos desarrollando. 
+                Pronto recibirás más instrucciones sobre cómo configurarlo.
+              </p>
+              <ul className="text-sm text-blue-600 mt-2 list-disc list-inside space-y-1">
+                <li>Contacta al equipo para obtener credenciales</li>
+                <li>Configura los webhooks para sincronización en tiempo real</li>
+                <li>Personaliza los campos según tus necesidades</li>
+              </ul>
+            </div>
+          </>
+        ) : config.provider === "zoho" ? (
           <>
             <div className="space-y-2">
               <Label htmlFor="clientId">Client ID</Label>

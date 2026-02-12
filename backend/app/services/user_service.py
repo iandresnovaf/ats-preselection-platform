@@ -1,4 +1,5 @@
 """Servicio de gestión de usuarios."""
+import logging
 from typing import List, Optional
 from datetime import datetime
 
@@ -12,6 +13,8 @@ from app.core.auth import get_password_hash, verify_password
 from app.core.security_logging import SecurityLogger
 import secrets
 import string
+
+logger = logging.getLogger(__name__)
 
 
 class UserService:
@@ -74,9 +77,12 @@ class UserService:
     
     async def create_user(self, data: UserCreate, performed_by: Optional[str] = None) -> User:
         """Crear nuevo usuario."""
+        logger.info(f"Creando usuario con email: {data.email}")
+        
         # Verificar email único
         existing = await self.get_by_email(data.email)
         if existing:
+            logger.warning(f"Intento de crear usuario con email duplicado: {data.email}")
             raise ValueError("Ya existe un usuario con este email")
         
         # Generar password temporal si no se proporciona
@@ -99,6 +105,8 @@ class UserService:
         await self.db.flush()
         await self.db.refresh(user)
         
+        logger.info(f"Usuario creado exitosamente: {user.id}")
+        
         # Loggear creación de usuario
         if self.request and performed_by:
             await self.security_logger.log_user_modification(
@@ -118,8 +126,11 @@ class UserService:
         performed_by: Optional[str] = None
     ) -> Optional[User]:
         """Actualizar usuario."""
+        logger.info(f"Actualizando usuario {user_id} - Datos recibidos: {data.model_dump()}")
+        
         user = await self.get_by_id(user_id)
         if not user:
+            logger.warning(f"Usuario no encontrado: {user_id}")
             return None
         
         # Guardar cambios para logging
@@ -129,6 +140,7 @@ class UserService:
         if data.email and data.email.lower() != user.email:
             existing = await self.get_by_email(data.email)
             if existing:
+                logger.warning(f"Intento de actualizar a email duplicado: {data.email}")
                 raise ValueError("Ya existe un usuario con este email")
             changes['email'] = {"old": user.email, "new": data.email.lower()}
             user.email = data.email.lower()
@@ -140,16 +152,36 @@ class UserService:
         if data.phone and data.phone != user.phone:
             changes['phone'] = {"old": "***", "new": "***"}  # Mask phone
             user.phone = data.phone
-        if data.role and data.role != user.role.value:
-            changes['role'] = {"old": user.role.value, "new": data.role}
-            user.role = UserRole(data.role)
-        if data.status and data.status != user.status.value:
-            changes['status'] = {"old": user.status.value, "new": data.status}
-            user.status = UserStatus(data.status)
+        
+        # Manejar actualización de role con correcta serialización de enum
+        if data.role:
+            current_role_value = user.role.value if hasattr(user.role, 'value') else str(user.role)
+            if data.role != current_role_value:
+                changes['role'] = {"old": current_role_value, "new": data.role}
+                try:
+                    user.role = UserRole(data.role)
+                    logger.info(f"Role actualizado: {current_role_value} -> {data.role}")
+                except ValueError as e:
+                    logger.error(f"Error al actualizar role: {e}")
+                    raise ValueError(f"Rol no válido: {data.role}")
+        
+        # Manejar actualización de status con correcta serialización de enum - FIX BUG-001/002
+        if data.status:
+            current_status_value = user.status.value if hasattr(user.status, 'value') else str(user.status)
+            if data.status != current_status_value:
+                changes['status'] = {"old": current_status_value, "new": data.status}
+                try:
+                    user.status = UserStatus(data.status)
+                    logger.info(f"Status actualizado: {current_status_value} -> {data.status}")
+                except ValueError as e:
+                    logger.error(f"Error al actualizar status: {e}")
+                    raise ValueError(f"Estado no válido: {data.status}")
         
         user.updated_at = datetime.utcnow()
         await self.db.flush()
         await self.db.refresh(user)
+        
+        logger.info(f"Usuario {user_id} actualizado exitosamente. Cambios: {changes}")
         
         # Loggear modificación
         if self.request and performed_by and changes:
@@ -165,13 +197,18 @@ class UserService:
     
     async def update_password(self, user_id: str, new_password: str, performed_by: Optional[str] = None) -> bool:
         """Actualizar password de usuario."""
+        logger.info(f"Actualizando password para usuario: {user_id}")
+        
         user = await self.get_by_id(user_id)
         if not user:
+            logger.warning(f"Usuario no encontrado para cambio de password: {user_id}")
             return False
         
         user.hashed_password = get_password_hash(new_password)
         user.updated_at = datetime.utcnow()
         await self.db.flush()
+        
+        logger.info(f"Password actualizado exitosamente para usuario: {user_id}")
         
         # Loggear cambio de contraseña por admin
         if self.request and performed_by and performed_by != user_id:
@@ -184,19 +221,39 @@ class UserService:
         
         return True
     
-    async def deactivate_user(self, user_id: str) -> Optional[User]:
+    async def deactivate_user(self, user_id: str, performed_by: Optional[str] = None) -> Optional[User]:
         """Desactivar usuario (soft delete)."""
-        return await self.update_user(
+        logger.info(f"Desactivando usuario: {user_id}")
+        
+        result = await self.update_user(
             user_id,
-            UserUpdate(status=UserStatus.INACTIVE.value)
+            UserUpdate(status=UserStatus.INACTIVE.value),
+            performed_by=performed_by
         )
+        
+        if result:
+            logger.info(f"Usuario {user_id} desactivado exitosamente")
+        else:
+            logger.warning(f"No se pudo desactivar usuario {user_id}")
+        
+        return result
     
-    async def activate_user(self, user_id: str) -> Optional[User]:
+    async def activate_user(self, user_id: str, performed_by: Optional[str] = None) -> Optional[User]:
         """Activar usuario."""
-        return await self.update_user(
+        logger.info(f"Activando usuario: {user_id}")
+        
+        result = await self.update_user(
             user_id,
-            UserUpdate(status=UserStatus.ACTIVE.value)
+            UserUpdate(status=UserStatus.ACTIVE.value),
+            performed_by=performed_by
         )
+        
+        if result:
+            logger.info(f"Usuario {user_id} activado exitosamente")
+        else:
+            logger.warning(f"No se pudo activar usuario {user_id}")
+        
+        return result
     
     def _generate_temp_password(self, length: int = 12) -> str:
         """Generar password temporal seguro."""

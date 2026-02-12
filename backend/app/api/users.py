@@ -1,7 +1,7 @@
 """API endpoints de usuarios."""
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -36,15 +36,16 @@ async def list_users(
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
+    request: Request,
     data: UserCreate,
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_admin),
 ):
     """Crear nuevo usuario (solo admin)."""
-    user_service = UserService(db)
+    user_service = UserService(db, request=request)
     
     try:
-        user = await user_service.create_user(data)
+        user = await user_service.create_user(data, performed_by=str(current_user.id))
         return user
     except ValueError as e:
         raise HTTPException(
@@ -83,16 +84,17 @@ async def get_user(
 
 @router.patch("/{user_id}", response_model=UserResponse)
 async def update_user(
+    request: Request,
     user_id: str,
     data: UserUpdate,
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_admin),
 ):
     """Actualizar usuario (solo admin)."""
-    user_service = UserService(db)
+    user_service = UserService(db, request=request)
     
     try:
-        user = await user_service.update_user(user_id, data)
+        user = await user_service.update_user(user_id, data, performed_by=str(current_user.id))
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -108,12 +110,13 @@ async def update_user(
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
+    request: Request,
     user_id: str,
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_admin),
 ):
-    """Desactivar usuario (soft delete, solo admin)."""
-    user_service = UserService(db)
+    """Desactivar usuario (soft delete, solo admin) - BUG-001 FIX."""
+    user_service = UserService(db, request=request)
     
     # No permitir eliminar el propio usuario
     if str(current_user.id) == user_id:
@@ -122,7 +125,8 @@ async def delete_user(
             detail="No puedes desactivar tu propio usuario",
         )
     
-    user = await user_service.deactivate_user(user_id)
+    # Llamar a deactivate_user con performed_by para logging
+    user = await user_service.deactivate_user(user_id, performed_by=str(current_user.id))
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -134,13 +138,16 @@ async def delete_user(
 
 @router.post("/{user_id}/activate", response_model=UserResponse)
 async def activate_user(
+    request: Request,
     user_id: str,
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_admin),
 ):
-    """Activar usuario (solo admin)."""
-    user_service = UserService(db)
-    user = await user_service.activate_user(user_id)
+    """Activar usuario (solo admin) - BUG-002 FIX."""
+    user_service = UserService(db, request=request)
+    
+    # Llamar a activate_user con performed_by para logging
+    user = await user_service.activate_user(user_id, performed_by=str(current_user.id))
     
     if not user:
         raise HTTPException(

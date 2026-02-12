@@ -178,6 +178,7 @@ class ATSProvider(str, Enum):
     """Proveedores de ATS soportados."""
     ZOHO = "zoho"
     ODOO = "odoo"
+    RHTOOLS = "rhtools"
 
 
 class ZohoConfig(BaseModel):
@@ -218,6 +219,28 @@ class OdooConfig(BaseModel):
             raise ValueError("URL debe comenzar con http:// o https://")
         if len(v) > 500:
             raise ValueError("URL demasiado larga")
+        return v
+
+
+class RHToolsConfig(BaseModel):
+    """Configuración de RHTools ATS ( próximo ATS propio)."""
+    api_url: str = Field(..., description="URL de la API de RHTools", max_length=500)
+    api_key: str = Field(..., description="API Key de RHTools", max_length=500)
+    client_id: str = Field(..., description="ID de cliente", max_length=100)
+    
+    # Webhook para recibir actualizaciones
+    webhook_secret: Optional[str] = Field(None, description="Secret para verificar webhooks", max_length=500)
+    
+    # Mapeo de campos personalizables
+    job_id_field: str = Field(default="job_id", max_length=100)
+    candidate_id_field: str = Field(default="candidate_id", max_length=100)
+    status_field: str = Field(default="status", max_length=100)
+    
+    @field_validator('api_url')
+    @classmethod
+    def validate_api_url(cls, v):
+        if not v.startswith(('http://', 'https://')):
+            raise ValueError("API URL debe comenzar con http:// o https://")
         return v
 
 
@@ -888,3 +911,30 @@ class ErrorResponse(BaseModel):
         if v and len(v) > 1000:
             v = v[:1000]
         return v
+
+
+# Importar esquemas de RHTools
+from app.schemas.rhtools import (
+    # Enums
+    ClientStatus, SubmissionStatus,
+    DocumentType, DocumentStatus,
+    MessageType, MessageStatus, MessageDirection,
+    # Client schemas
+    ClientBase, ClientCreate, ClientUpdate, ClientResponse, ClientListResponse,
+    # Pipeline schemas
+    StageRequiredFieldSchema, PipelineStageBase, PipelineStageCreate, PipelineStageUpdate,
+    PipelineStageResponse, PipelineTemplateBase, PipelineTemplateCreate, PipelineTemplateUpdate,
+    PipelineTemplateResponse, PipelineListResponse, ReorderStagesRequest,
+    # Submission schemas
+    SubmissionBase, SubmissionCreate, SubmissionUpdate, ChangeStageRequest,
+    StageHistoryResponse, SubmissionResponse, SubmissionWithHistory, SubmissionListResponse,
+    # Document schemas
+    DocumentBase, DocumentCreate, DocumentUpdate, DocumentResponse, DocumentListResponse,
+    DocumentDownloadResponse, DocumentExtractionResponse,
+    # Message schemas
+    MessageTemplateBase, MessageTemplateCreate, MessageTemplateUpdate, MessageTemplateResponse,
+    MessageBase, MessageCreate, MessageResponse,
+    # Offlimits schemas
+    CandidateOfflimitsBase, CandidateOfflimitsCreate, CandidateOfflimitsUpdate,
+    CandidateOfflimitsResponse, CandidateOfflimitsListResponse,
+)

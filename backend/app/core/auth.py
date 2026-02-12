@@ -12,7 +12,9 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.models import User, UserStatus
+
+# Import directo para evitar circular imports
+# User y UserStatus se importan localmente donde se usan
 
 # Password hashing con bcrypt y timing attack protection
 pwd_context = CryptContext(
@@ -24,9 +26,11 @@ pwd_context = CryptContext(
 # JWT
 security = HTTPBearer()
 
-# Dummy hash para timing attack protection
-# Se usa cuando el usuario no existe para que la comparación tarde igual
-DUMMY_HASH = pwd_context.hash("dummy_password_for_timing_protection_12345!")
+# Dummy hash para timing attack protection - se genera bajo demanda
+# para evitar problemas de inicialización con bcrypt
+def get_dummy_hash():
+    """Genera un hash dummy para timing attack protection."""
+    return pwd_context.hash("dummy_pass")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -37,7 +41,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
     if not hashed_password:
         # Si no hay hash, verificar contra dummy para mantener tiempo constante
-        pwd_context.verify(plain_password, DUMMY_HASH)
+        pwd_context.verify(plain_password, get_dummy_hash())
         return False
     
     try:
@@ -54,7 +58,7 @@ def verify_password_constant_time(plain_password: str, hashed_password: str) -> 
     # Siempre realizar una verificación de bcrypt (lento) para mantener tiempo constante
     if not hashed_password:
         # Verificar contra dummy hash
-        pwd_context.verify(plain_password, DUMMY_HASH)
+        pwd_context.verify(plain_password, get_dummy_hash())
         return False
     
     result = pwd_context.verify(plain_password, hashed_password)
@@ -106,8 +110,10 @@ def decode_token(token: str) -> Optional[dict]:
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
-) -> User:
+):
     """Obtener usuario actual desde token JWT (header Authorization - legacy)."""
+    from app.models import User, UserStatus
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Credenciales inválidas",
@@ -145,8 +151,10 @@ async def get_current_user(
 async def get_current_user_from_cookie(
     request: Request,
     db: AsyncSession = Depends(get_db)
-) -> User:
+):
     """Obtener usuario actual desde cookie httpOnly access_token."""
+    from app.models import User, UserStatus
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Credenciales inválidas",
@@ -190,7 +198,7 @@ async def authenticate_user(
     email: str, 
     password: str,
     request=None  # Para logging de seguridad
-) -> Optional[User]:
+):
     """
     Autenticar usuario con email y password.
     
@@ -198,6 +206,7 @@ async def authenticate_user(
     - Siempre realiza hash verification (incluso si usuario no existe)
     - Usa dummy hash para mantener tiempo constante
     """
+    from app.models import User, UserStatus
     from app.core.security_logging import SecurityLogger
     security_logger = SecurityLogger()
     
