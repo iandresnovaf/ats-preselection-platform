@@ -20,11 +20,13 @@ interface ATSConfig {
   url?: string;
   database?: string;
   username?: string;
-  apiKey?: string;
+  odooApiKey?: string;
+  jobModel?: string;
+  applicantModel?: string;
   // RHTools fields
   apiUrl?: string;
-  apiKey?: string;
-  clientId?: string;
+  rhApiKey?: string;
+  rhClientId?: string;
   webhookSecret?: string;
   jobIdField?: string;
   candidateIdField?: string;
@@ -177,22 +179,22 @@ export function ATSConfigForm() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="clientId">Client ID</Label>
+              <Label htmlFor="rhClientId">Client ID</Label>
               <Input
-                id="clientId"
-                value={config.clientId || ""}
-                onChange={(e) => setConfig({ ...config, clientId: e.target.value })}
+                id="rhClientId"
+                value={config.rhClientId || ""}
+                onChange={(e) => setConfig({ ...config, rhClientId: e.target.value })}
                 placeholder="rh_client_xxx"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="apiKey">API Key</Label>
+              <Label htmlFor="rhApiKey">API Key</Label>
               <Input
-                id="apiKey"
+                id="rhApiKey"
                 type="password"
-                value={config.apiKey || ""}
-                onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                value={config.rhApiKey || ""}
+                onChange={(e) => setConfig({ ...config, rhApiKey: e.target.value })}
                 placeholder="••••••••"
               />
             </div>
@@ -348,12 +350,12 @@ export function ATSConfigForm() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="apiKey">API Key o Contraseña</Label>
+              <Label htmlFor="odooApiKey">API Key o Contraseña</Label>
               <Input
-                id="apiKey"
+                id="odooApiKey"
                 type="password"
-                value={config.apiKey || ""}
-                onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                value={config.odooApiKey || ""}
+                onChange={(e) => setConfig({ ...config, odooApiKey: e.target.value })}
                 placeholder="••••••••"
               />
               <p className="text-sm text-muted-foreground">

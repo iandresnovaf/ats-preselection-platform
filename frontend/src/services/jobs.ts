@@ -1,7 +1,7 @@
 import api from "./api";
 import { JobOpening, JobFilters, CreateJobData, UpdateJobData, JobStatistics } from "@/types/jobs";
 
-export const jobsService = {
+export const jobService = {
   async getJobs(filters?: JobFilters): Promise<JobOpening[]> {
     const params = new URLSearchParams();
     if (filters?.status) params.append("status", filters.status);

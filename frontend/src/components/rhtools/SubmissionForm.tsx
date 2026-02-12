@@ -31,8 +31,8 @@ import { submissionsService } from "@/services/rhtools/submissions";
 import { clientsService } from "@/services/rhtools/clients";
 import { pipelineService } from "@/services/rhtools/pipeline";
 import { candidateService } from "@/services/candidates";
-import { jobsService } from "@/services/jobs";
-import { usersService } from "@/services/users";
+import { jobService } from "@/services/jobs";
+import { userService } from "@/services/users";
 
 interface SubmissionFormProps {
   isOpen: boolean;
@@ -91,8 +91,8 @@ export function SubmissionForm({ isOpen, onClose, onSuccess, initialData }: Subm
       const [clientsRes, candidatesRes, jobsRes, consultantsRes, templatesRes] = await Promise.all([
         clientsService.getClients({ status: "active" }),
         candidateService.getCandidates(),
-        jobsService.getJobs({ status: "active" }),
-        usersService.getUsers(),
+        jobService.getJobs({ status: "active" }),
+        userService.getUsers(),
         pipelineService.getTemplates(),
       ]);
 

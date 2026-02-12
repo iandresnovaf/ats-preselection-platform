@@ -47,7 +47,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { JobForm } from '@/components/jobs/JobForm';
+import JobForm from '@/components/jobs/JobForm';
 import { CandidateForm } from '@/components/candidates/CandidateForm';
 import { EvaluationModal } from '@/components/evaluations/EvaluationModal';
 import { useAuthStore } from '@/store/auth';

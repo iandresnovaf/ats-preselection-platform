@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { configApi } from "@/services/api";
+import { configApi } from "@/services/config";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

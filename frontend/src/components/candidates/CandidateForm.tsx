@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { CreateCandidateData, Candidate } from "@/types/candidates";
+import { CreateCandidateData, Candidate, CandidateSource } from "@/types/candidates";
 import { JobOpening } from "@/types/jobs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,7 +121,7 @@ export function CandidateForm({ candidate, jobId, onSubmit, onCancel, isLoading 
       email: data.email.toLowerCase().trim(),
       phone: data.phone ? sanitizePhone(data.phone) : undefined,
       job_opening_id: data.job_opening_id,
-      source: data.source,
+      source: (data.source as CandidateSource) || 'manual',
       linkedin_url: data.linkedin_url || undefined,
       portfolio_url: data.portfolio_url || undefined,
       years_experience: data.years_experience,

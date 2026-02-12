@@ -134,9 +134,9 @@ export function DocumentUploader({
       const document = await documentsService.uploadDocument({
         file,
         type,
-        submissionId,
-        candidateId,
-        jobId,
+        submission_id: submissionId,
+        candidate_id: candidateId,
+        job_id: jobId,
       });
 
       setUploadedDoc(document);

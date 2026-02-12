@@ -5,7 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { JobForm } from '@/components/jobs/JobForm';
+import JobForm from '@/components/jobs/JobForm';
 import { jobService } from '@/services/jobs';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/store/auth';
