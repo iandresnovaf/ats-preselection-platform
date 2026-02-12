@@ -9,7 +9,7 @@ from sqlalchemy import select, and_, or_, func, desc
 from sqlalchemy.orm import selectinload
 
 from app.models import JobOpening, JobStatus, Candidate
-from app.schemas import JobOpeningCreate, JobOpeningUpdate
+from app.schemas import JobOpeningCreate, JobOpeningUpdate, JobRequirements
 
 
 def encode_cursor(created_at: datetime) -> str:
@@ -156,6 +156,11 @@ class JobService:
     
     async def create_job(self, data: JobOpeningCreate) -> JobOpening:
         """Crear nueva oferta de trabajo."""
+        # Convertir requirements a dict si existe
+        requirements = None
+        if data.requirements:
+            requirements = data.requirements.model_dump()
+        
         job = JobOpening(
             title=data.title,
             description=data.description,
@@ -163,6 +168,10 @@ class JobService:
             location=data.location,
             seniority=data.seniority,
             sector=data.sector,
+            requirements=requirements,
+            salary_range_min=data.salary_range_min,
+            salary_range_max=data.salary_range_max,
+            employment_type=data.employment_type or "full-time",
             assigned_consultant_id=data.assigned_consultant_id,
             status=JobStatus.DRAFT.value,
             is_active=True,
@@ -197,6 +206,14 @@ class JobService:
             job.seniority = data.seniority
         if data.sector is not None:
             job.sector = data.sector
+        if data.requirements is not None:
+            job.requirements = data.requirements.model_dump()
+        if data.salary_range_min is not None:
+            job.salary_range_min = data.salary_range_min
+        if data.salary_range_max is not None:
+            job.salary_range_max = data.salary_range_max
+        if data.employment_type is not None:
+            job.employment_type = data.employment_type
         if data.status is not None:
             job.status = data.status
         if data.is_active is not None:

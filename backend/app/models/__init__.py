@@ -74,9 +74,10 @@ class Configuration(Base):
 
 
 # Importar modelos modulares (deben definirse después de Base y antes de las relaciones)
-from app.models.job import JobOpening, JobStatus
+from app.models.job import JobOpening, JobStatus, EmploymentType
 from app.models.candidate import Candidate, CandidateStatus
 from app.models.evaluation import Evaluation
+from app.models.match_result import MatchResult, MatchRecommendation, MatchingAuditLog
 from app.models.rhtools import Document, DocumentTextExtraction, ResumeParse
 
 

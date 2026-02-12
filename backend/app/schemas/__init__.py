@@ -461,6 +461,17 @@ class ResetPasswordRequest(BaseModel):
 
 # ============== JOB OPENING SCHEMAS ==============
 
+class JobRequirements(BaseModel):
+    """Requisitos estructurados de un job para matching con IA."""
+    required_skills: List[str] = Field(default=[], max_length=100)
+    preferred_skills: List[str] = Field(default=[], max_length=100)
+    min_years_experience: Optional[int] = Field(None, ge=0, le=50)
+    education_level: Optional[str] = Field(None, max_length=50)
+    education_fields: List[str] = Field(default=[], max_length=20)
+    languages: List[Dict[str, str]] = Field(default=[], max_length=10)
+    certifications: List[str] = Field(default=[], max_length=50)
+
+
 class JobOpeningBase(BaseModel):
     title: str = Field(..., min_length=3, max_length=255)
     description: str = Field(..., max_length=10000)
@@ -468,6 +479,10 @@ class JobOpeningBase(BaseModel):
     location: Optional[str] = Field(None, max_length=200)
     seniority: Optional[str] = Field(None, max_length=50)
     sector: Optional[str] = Field(None, max_length=100)
+    requirements: Optional[JobRequirements] = None
+    salary_range_min: Optional[int] = Field(None, ge=0)
+    salary_range_max: Optional[int] = Field(None, ge=0)
+    employment_type: Optional[str] = Field(default="full-time", max_length=50)
     
     @field_validator('title')
     @classmethod
@@ -495,6 +510,22 @@ class JobOpeningBase(BaseModel):
             v = validate_no_html(v)
             return sanitize_string(v, max_length=200)
         return v
+    
+    @field_validator('employment_type')
+    @classmethod
+    def validate_employment_type(cls, v):
+        if v:
+            allowed = ['full-time', 'part-time', 'contract', 'freelance', 'internship']
+            if v not in allowed:
+                raise ValueError(f"Tipo de empleo inválido. Debe ser: {', '.join(allowed)}")
+        return v
+    
+    @field_validator('salary_range_max')
+    @classmethod
+    def validate_salary_range(cls, v, values):
+        if v and values.data.get('salary_range_min') and v < values.data['salary_range_min']:
+            raise ValueError("El salario máximo debe ser mayor que el mínimo")
+        return v
 
 
 class JobOpeningCreate(JobOpeningBase):
@@ -515,10 +546,7 @@ class JobOpeningUpdate(BaseModel):
     location: Optional[str] = Field(None, max_length=200)
     seniority: Optional[str] = Field(None, max_length=50)
     sector: Optional[str] = Field(None, max_length=100)
-    is_active: Optional[bool] = None
-    status: Optional[str] = Field(None, max_length=50)
-    assigned_consultant_id: Optional[str] = Field(None, max_length=50)
-    
+    requirements: Optional[JobRequirements] = None
     @field_validator('title')
     @classmethod
     def validate_title(cls, v):
@@ -546,17 +574,27 @@ class JobOpeningUpdate(BaseModel):
             return sanitize_string(v, max_length=200)
         return v
     
-    @field_validator('assigned_consultant_id')
+    @field_validator('assigned_consultant_id', check_fields=False)
     @classmethod
     def validate_consultant_id(cls, v):
         if v:
             return validate_uuid(v)
+        return v
+    
+    @field_validator('employment_type', check_fields=False)
+    @classmethod
+    def validate_employment_type_update(cls, v):
+        if v:
+            allowed = ['full-time', 'part-time', 'contract', 'freelance', 'internship']
+            if v not in allowed:
+                raise ValueError(f"Tipo de empleo inválido. Debe ser: {', '.join(allowed)}")
         return v
 
 
 class JobOpeningResponse(JobOpeningBase):
     id: str
     assigned_consultant_id: Optional[str] = None
+    job_description_file_id: Optional[str] = None
     zoho_job_id: Optional[str] = Field(None, max_length=100)
     is_active: bool
     status: str
@@ -566,7 +604,7 @@ class JobOpeningResponse(JobOpeningBase):
     class Config:
         from_attributes = True
     
-    @field_validator('id', 'assigned_consultant_id', mode='before')
+    @field_validator('id', 'assigned_consultant_id', 'job_description_file_id', mode='before')
     @classmethod
     def convert_uuid_to_str(cls, v):
         if v is not None:

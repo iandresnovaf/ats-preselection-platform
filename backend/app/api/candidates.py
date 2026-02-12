@@ -1,11 +1,12 @@
 """API endpoints para Candidatos."""
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import get_current_active_user, require_consultant, require_viewer
+from app.core.llm_rate_limit import get_llm_rate_limiter
 from app.models import User, CandidateStatus
 from app.schemas import (
     CandidateCreate,
@@ -149,12 +150,47 @@ async def update_candidate(
 
 @router.post("/{candidate_id}/evaluate", response_model=EvaluationResponse)
 async def evaluate_candidate(
+    request: Request,
     candidate_id: str,
-    request: EvaluateRequest,
+    eval_request: EvaluateRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_consultant),
 ):
-    """Evaluar candidato con LLM (solo consultor o admin)."""
+    """
+    Evaluar candidato con LLM (solo consultor o admin).
+    
+    Rate Limits:
+    - 5 requests por minuto por usuario
+    - 50 requests por hora por usuario
+    - 200 requests por día por usuario
+    """
+    # Rate limiting para LLM
+    rate_limiter = get_llm_rate_limiter()
+    
+    # Obtener IP del cliente
+    forwarded = request.headers.get("X-Forwarded-For")
+    ip_address = forwarded.split(",")[0].strip() if forwarded else (
+        request.client.host if request.client else "unknown"
+    )
+    
+    user_id = str(current_user.id)
+    
+    # Verificar rate limit
+    limits = await rate_limiter.check_rate_limit(user_id, ip_address)
+    
+    if not limits["allowed"]:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error": "Rate limit exceeded",
+                "message": f"Has excedido el límite de {limits['violated']}. "
+                           f"Intenta de nuevo en {limits['retry_after']} segundos.",
+                "retry_after": limits["retry_after"],
+                "limits": limits["limits"]
+            },
+            headers={"Retry-After": str(limits["retry_after"])}
+        )
+    
     candidate_service = CandidateService(db)
     job_service = JobService(db)
     evaluation_service = EvaluationService(db)
@@ -176,12 +212,19 @@ async def evaluate_candidate(
         )
     
     # Verificar si ya tiene evaluación y no se fuerza re-evaluación
-    if not request.force:
+    if not eval_request.force:
         latest = await evaluation_service.get_latest_evaluation(candidate_id)
         if latest:
-            return latest
+            # Agregar headers de rate limit a la respuesta
+            response = latest
+            response._rate_limit_headers = {
+                "X-RateLimit-Limit": str(limits["limits"]["minute"]["limit"]),
+                "X-RateLimit-Remaining": str(limits["limits"]["minute"]["remaining"]),
+                "X-Cache": "HIT"
+            }
+            return response
     
-    # Configuración del LLM (hardcoded por ahora, idealmente vendría de la BD)
+    # Configuración del LLM
     llm_config = {
         "provider": "openai",
         "model": "gpt-4o-mini",
@@ -193,7 +236,12 @@ async def evaluate_candidate(
             candidate_id=candidate_id,
             job_opening=job,
             llm_config=llm_config,
+            force_refresh=eval_request.force,
         )
+        
+        # Agregar headers de rate limit (nota: FastAPI no permite modificar headers
+        # directamente en la respuesta del modelo, pero se pueden agregar en middleware)
+        
         return evaluation
     except ValueError as e:
         raise HTTPException(

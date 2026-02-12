@@ -2,7 +2,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import Column, String, DateTime, ForeignKey, JSON, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -24,6 +24,13 @@ class CandidateStatus(str, Enum):
 class Candidate(Base):
     """Candidato."""
     __tablename__ = "candidates"
+    
+    # Índices compuestos para queries frecuentes
+    __table_args__ = (
+        Index('idx_candidates_job_status', 'job_opening_id', 'status'),
+        Index('idx_candidates_created_at', 'created_at'),
+        Index('idx_candidates_status_source', 'status', 'source'),
+    )
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
@@ -49,8 +56,11 @@ class Candidate(Base):
     # Estado
     status = Column(String(50), default=CandidateStatus.NEW.value)
     
-    # Zoho integration
-    zoho_candidate_id = Column(String(100))
+    # External integrations
+    zoho_candidate_id = Column(String(100), index=True)
+    external_id = Column(String(100), index=True)  # ID genérico para cualquier ATS externo
+    linkedin_url = Column(String(500))
+    source = Column(String(50), default="manual")  # manual, zoho, odoo, linkedin, api
     
     # Anti-duplicados
     duplicate_of_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"))
@@ -59,10 +69,10 @@ class Candidate(Base):
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    source = Column(String(50))  # webhook, cron, manual
     
     # Relations
     evaluations = relationship("Evaluation", back_populates="candidate")
     decisions = relationship("CandidateDecision", back_populates="candidate")
     communications = relationship("Communication", back_populates="candidate")
     documents = relationship("Document", back_populates="candidate")
+    match_results = relationship("MatchResult", back_populates="candidate", cascade="all, delete-orphan")

@@ -3,7 +3,21 @@ import { JobOpening, JobStatus } from "@/types/jobs";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Briefcase, MapPin, Users, Calendar, MoreHorizontal, Eye, Edit, Trash2, Pause, Play, XCircle } from "lucide-react";
+import { 
+  Briefcase, 
+  MapPin, 
+  Users, 
+  Calendar, 
+  MoreHorizontal, 
+  Eye, 
+  Edit, 
+  Trash2, 
+  Pause, 
+  Play, 
+  XCircle,
+  FileText,
+  Award
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +34,7 @@ interface JobCardProps {
   onClose?: (job: JobOpening) => void;
   onPause?: (job: JobOpening) => void;
   onActivate?: (job: JobOpening) => void;
+  onMatch?: (job: JobOpening) => void;
 }
 
 const statusConfig: Record<JobStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
@@ -29,23 +44,31 @@ const statusConfig: Record<JobStatus, { label: string; variant: "default" | "sec
   closed: { label: "Cerrada", variant: "destructive" },
 };
 
-function JobCardComponent({ job, onEdit, onDelete, onClose, onPause, onActivate }: JobCardProps) {
+function JobCardComponent({ job, onEdit, onDelete, onClose, onPause, onActivate, onMatch }: JobCardProps) {
   const status = statusConfig[job.status];
+  const hasPdf = !!job.pdf_url;
+  const topCandidates = job.top_candidates_count || 0;
 
   return (
     <Card className="hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h3 className="font-semibold text-lg truncate">{job.title}</h3>
               <Badge variant={status.variant}>{status.label}</Badge>
+              {hasPdf && (
+                <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50">
+                  <FileText className="h-3 w-3 mr-1" />
+                  JD PDF
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground mt-1">{job.department}</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
+              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Opciones">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -62,6 +85,10 @@ function JobCardComponent({ job, onEdit, onDelete, onClose, onPause, onActivate 
                   Editar
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={() => onMatch?.(job)}>
+                <Award className="h-4 w-4 mr-2" />
+                Ver Matching
+              </DropdownMenuItem>
               {job.status === 'active' && (
                 <DropdownMenuItem onClick={() => onPause?.(job)}>
                   <Pause className="h-4 w-4 mr-2" />
@@ -115,6 +142,20 @@ function JobCardComponent({ job, onEdit, onDelete, onClose, onPause, onActivate 
             <span>{new Date(job.created_at).toLocaleDateString('es-ES')}</span>
           </div>
         </div>
+
+        {/* Top Candidates Badge */}
+        {topCandidates > 0 && (
+          <div className="mt-3 pt-3 border-t">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Candidatos top match (&gt;75%):</span>
+              <Badge variant="default" className="bg-green-600">
+                <Award className="h-3 w-3 mr-1" />
+                {topCandidates}
+              </Badge>
+            </div>
+          </div>
+        )}
+
         {job.assigned_consultant && (
           <div className="mt-3 pt-3 border-t">
             <p className="text-sm text-muted-foreground">
@@ -123,13 +164,22 @@ function JobCardComponent({ job, onEdit, onDelete, onClose, onPause, onActivate 
           </div>
         )}
       </CardContent>
-      <CardFooter className="pt-0">
-        <Link href={`/dashboard/jobs/${job.id}`} className="w-full">
+      <CardFooter className="pt-0 flex gap-2">
+        <Link href={`/dashboard/jobs/${job.id}`} className="flex-1">
           <Button variant="outline" className="w-full" size="sm">
             <Eye className="h-4 w-4 mr-2" />
             Ver detalles
           </Button>
         </Link>
+        <Button 
+          variant="secondary" 
+          className="flex-1" 
+          size="sm"
+          onClick={() => onMatch?.(job)}
+        >
+          <Award className="h-4 w-4 mr-2" />
+          Matching
+        </Button>
       </CardFooter>
     </Card>
   );

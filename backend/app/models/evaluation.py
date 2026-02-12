@@ -1,7 +1,7 @@
 """Modelos para Evaluaciones."""
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Integer, Text, JSON, Boolean
+from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Integer, Text, JSON, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -13,8 +13,16 @@ class Evaluation(Base):
     """Evaluación de candidato con IA."""
     __tablename__ = "evaluations"
     
+    # Índices para mejorar performance de queries frecuentes
+    __table_args__ = (
+        Index('idx_evaluations_candidate_id', 'candidate_id'),
+        Index('idx_evaluations_created_at', 'created_at'),
+        Index('idx_evaluations_decision', 'decision'),
+        Index('idx_evaluations_candidate_created', 'candidate_id', 'created_at'),
+    )
+    
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"))
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"), index=True)
     candidate = relationship("Candidate", back_populates="evaluations", lazy="selectin")
     
     # Score y decisión

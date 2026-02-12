@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.database import engine, Base
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_logging import SecurityLogger
-from app.api import config, auth, users, jobs, candidates, evaluations, health, rhtools
+from app.api import config, auth, users, jobs, candidates, evaluations, matching, health, rhtools
 from app.api.auth import limiter as auth_limiter
 
 # Logger
@@ -265,6 +265,7 @@ app.include_router(users.router, prefix="/api/v1")
 app.include_router(jobs.router, prefix="/api/v1")
 app.include_router(candidates.router, prefix="/api/v1")
 app.include_router(evaluations.router, prefix="/api/v1")
+app.include_router(matching.router, prefix="/api/v1")
 app.include_router(rhtools.router, prefix="/api/v1")
 app.include_router(health.router, prefix="")
 

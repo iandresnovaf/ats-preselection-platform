@@ -1,4 +1,6 @@
 export type JobStatus = 'draft' | 'active' | 'paused' | 'closed';
+export type EmploymentType = 'full-time' | 'part-time' | 'contract' | 'internship';
+export type EducationLevel = 'high-school' | 'associate' | 'bachelor' | 'master' | 'phd' | 'other';
 
 export interface JobOpening {
   id: string;
@@ -21,6 +23,17 @@ export interface JobOpening {
   updated_at: string;
   published_at?: string;
   closed_at?: string;
+  // Nuevos campos
+  pdf_url?: string;
+  pdf_name?: string;
+  required_skills?: string[];
+  min_years_experience?: number;
+  education_level?: EducationLevel;
+  employment_type?: EmploymentType;
+  salary_min?: number;
+  salary_max?: number;
+  // Matching stats
+  top_candidates_count?: number;
 }
 
 export interface JobFilters {
@@ -29,6 +42,8 @@ export interface JobFilters {
   department?: string;
   location?: string;
   search?: string;
+  employment_type?: EmploymentType;
+  has_pdf?: boolean;
 }
 
 export interface CreateJobData {
@@ -39,6 +54,15 @@ export interface CreateJobData {
   seniority: string;
   sector: string;
   assigned_consultant_id?: string;
+  // Nuevos campos
+  pdf_url?: string;
+  pdf_name?: string;
+  required_skills?: string[];
+  min_years_experience?: number;
+  education_level?: EducationLevel;
+  employment_type?: EmploymentType;
+  salary_min?: number;
+  salary_max?: number;
 }
 
 export interface UpdateJobData {
@@ -50,6 +74,15 @@ export interface UpdateJobData {
   sector?: string;
   status?: JobStatus;
   assigned_consultant_id?: string;
+  // Nuevos campos
+  pdf_url?: string;
+  pdf_name?: string;
+  required_skills?: string[];
+  min_years_experience?: number;
+  education_level?: EducationLevel;
+  employment_type?: EmploymentType;
+  salary_min?: number;
+  salary_max?: number;
 }
 
 export interface JobStatistics {
@@ -57,4 +90,10 @@ export interface JobStatistics {
   by_status: Record<string, number>;
   average_evaluation_score: number;
   top_candidates: number;
+}
+
+export interface JobUploadResponse {
+  url: string;
+  filename: string;
+  size: number;
 }

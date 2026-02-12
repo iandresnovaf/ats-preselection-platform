@@ -1,5 +1,5 @@
 import api from "./api";
-import { JobOpening, JobFilters, CreateJobData, UpdateJobData, JobStatistics } from "@/types/jobs";
+import { JobOpening, JobFilters, CreateJobData, UpdateJobData, JobStatistics, JobUploadResponse } from "@/types/jobs";
 
 export const jobService = {
   async getJobs(filters?: JobFilters): Promise<JobOpening[]> {
@@ -9,6 +9,8 @@ export const jobService = {
     if (filters?.department) params.append("department", filters.department);
     if (filters?.location) params.append("location", filters.location);
     if (filters?.search) params.append("search", filters.search);
+    if (filters?.employment_type) params.append("employment_type", filters.employment_type);
+    if (filters?.has_pdf !== undefined) params.append("has_pdf", String(filters.has_pdf));
     
     const response = await api.get(`/jobs?${params.toString()}`);
     // El backend retorna paginación: {items: [], total: ...}
@@ -58,4 +60,26 @@ export const jobService = {
     const response = await api.post(`/jobs/${id}/activate`);
     return response.data;
   },
+
+  async uploadJobPdf(id: string, file: File, onProgress?: (progress: number) => void): Promise<JobUploadResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    
+    const response = await api.post(`/jobs/${id}/upload-pdf`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress);
+        }
+      },
+    });
+    return response.data;
+  },
+
+  async removeJobPdf(id: string): Promise<void> {
+    await api.delete(`/jobs/${id}/pdf`);
+  }
 };

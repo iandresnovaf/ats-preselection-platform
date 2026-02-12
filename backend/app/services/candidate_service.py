@@ -1,6 +1,7 @@
 """Servicio para gestión de candidatos."""
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, func, desc
@@ -9,6 +10,8 @@ from sqlalchemy.orm import selectinload, joinedload
 from app.models import Candidate, CandidateStatus, Evaluation, JobOpening
 from app.schemas import CandidateCreate, CandidateUpdate
 from app.services.evaluation_service import EvaluationService
+from app.core.llm_cache import get_cached_evaluation, cache_evaluation
+from app.integrations.llm import LLMClient, EvaluationResult
 
 
 class CandidateService:
@@ -155,37 +158,131 @@ class CandidateService:
         candidate_id: str,
         job_opening: JobOpening,
         llm_config: Dict[str, Any],
+        force_refresh: bool = False,
     ) -> Evaluation:
-        """Evaluar candidato con LLM."""
+        """
+        Evaluar candidato con LLM.
+        
+        Args:
+            candidate_id: ID del candidato
+            job_opening: Objeto JobOpening
+            llm_config: Configuración del LLM
+            force_refresh: Si es True, ignora el caché
+        
+        Returns:
+            Evaluation: Objeto de evaluación creado
+        """
         # Obtener candidato
         candidate = await self.get_by_id(candidate_id)
         if not candidate:
             raise ValueError("Candidato no encontrado")
         
-        # TODO: Implementar integración real con LLM
-        # Por ahora retornamos una evaluación simulada
-        import random
-        import time
+        # Preparar datos para el LLM
+        candidate_data = {
+            "id": str(candidate.id),
+            "full_name": candidate.full_name,
+            "email": candidate.email,
+            "extracted_skills": candidate.extracted_skills or [],
+            "extracted_experience": candidate.extracted_experience or [],
+            "extracted_education": candidate.extracted_education or [],
+            "raw_data": candidate.raw_data or {},
+        }
         
+        job_data = {
+            "id": str(job_opening.id),
+            "title": job_opening.title,
+            "description": job_opening.description,
+            "department": job_opening.department,
+            "location": job_opening.location,
+            "seniority": job_opening.seniority,
+        }
+        
+        provider = llm_config.get("provider", "openai")
+        model = llm_config.get("model", "gpt-4o-mini")
+        
+        # Verificar caché
         start_time = time.time()
+        cached_result = None
         
-        # Simular evaluación LLM
-        score = random.uniform(60, 95)
-        decision = "PROCEED" if score >= 75 else "REVIEW" if score >= 50 else "REJECT_HARD"
+        if not force_refresh:
+            cached_result = await get_cached_evaluation(
+                candidate_data=candidate_data,
+                job_data=job_data,
+                provider=provider,
+                model=model,
+            )
         
-        evaluation_time_ms = int((time.time() - start_time) * 1000)
+        if cached_result:
+            # Usar resultado cacheado
+            result = {
+                "score": cached_result["score"],
+                "decision": cached_result["decision"],
+                "strengths": cached_result.get("strengths", []),
+                "gaps": cached_result.get("gaps", []),
+                "red_flags": cached_result.get("red_flags", []),
+                "evidence": cached_result.get("evidence", ""),
+                "cached": True,
+            }
+            evaluation_time_ms = int((time.time() - start_time) * 1000)
+        else:
+            # Llamar al LLM
+            llm_client = LLMClient(config=None)
+            await llm_client.initialize(self.db)
+            
+            try:
+                eval_result: EvaluationResult = await llm_client.evaluate_candidate(
+                    candidate_data=candidate_data,
+                    job_data=job_data,
+                )
+                
+                result = {
+                    "score": eval_result.score,
+                    "decision": eval_result.decision.upper(),  # Convertir a nuestro formato
+                    "strengths": eval_result.strengths,
+                    "gaps": eval_result.gaps,
+                    "red_flags": eval_result.red_flags,
+                    "evidence": eval_result.evidence,
+                    "cached": False,
+                }
+                
+                # Guardar en caché
+                await cache_evaluation(
+                    candidate_data=candidate_data,
+                    job_data=job_data,
+                    result=result,
+                    provider=provider,
+                    model=model,
+                    ttl=86400,  # 24 horas
+                )
+                
+            except Exception as e:
+                # Fallback graceful
+                result = {
+                    "score": 50.0,
+                    "decision": "REVIEW",
+                    "strengths": [],
+                    "gaps": ["Error en evaluación automática"],
+                    "red_flags": [],
+                    "evidence": f"Error durante evaluación: {str(e)}. Revisión manual requerida.",
+                    "cached": False,
+                    "error": True,
+                }
+            finally:
+                await llm_client.close()
+            
+            evaluation_time_ms = int((time.time() - start_time) * 1000)
         
-        # Crear evaluación
+        # Crear evaluación en BD
         evaluation = await self.evaluation_service.create_evaluation(
             candidate_id=candidate_id,
-            score=score,
-            decision=decision,
-            strengths=["Buena experiencia técnica", "Comunicación clara"],
-            gaps=["Podría mejorar liderazgo"],
-            red_flags=[],
-            evidence="Basado en el CV analizado...",
-            llm_provider=llm_config.get("provider", "openai"),
-            llm_model=llm_config.get("model", "gpt-4o-mini"),
+            score=result["score"],
+            decision=result["decision"],
+            strengths=result["strengths"],
+            gaps=result["gaps"],
+            red_flags=result["red_flags"],
+            evidence=result["evidence"],
+            llm_provider=provider,
+            llm_model=model,
             prompt_version=llm_config.get("prompt_version", "v1.0"),
             evaluation_time_ms=evaluation_time_ms,
         )
