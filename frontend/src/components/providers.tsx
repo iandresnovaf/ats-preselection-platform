@@ -13,6 +13,10 @@ export function Providers({ children }: ProvidersProps) {
     defaultOptions: {
       queries: {
         refetchOnWindowFocus: false,
+        staleTime: 60 * 1000, // 1 minuto por defecto
+        gcTime: 5 * 60 * 1000, // 5 minutos (antes cacheTime)
+        retry: 2,
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
       },
     },
   }));

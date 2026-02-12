@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { JobOpening, JobStatus } from "@/types/jobs";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,7 @@ const statusConfig: Record<JobStatus, { label: string; variant: "default" | "sec
   closed: { label: "Cerrada", variant: "destructive" },
 };
 
-export function JobCard({ job, onEdit, onDelete, onClose, onPause, onActivate }: JobCardProps) {
+function JobCardComponent({ job, onEdit, onDelete, onClose, onPause, onActivate }: JobCardProps) {
   const status = statusConfig[job.status];
 
   return (
@@ -133,3 +134,6 @@ export function JobCard({ job, onEdit, onDelete, onClose, onPause, onActivate }:
     </Card>
   );
 }
+
+// Memoize para evitar re-renders innecesarios
+export const JobCard = memo(JobCardComponent);

@@ -71,6 +71,22 @@ class Settings(BaseSettings):
             if len(v) < 32:
                 raise ValueError("SECRET_KEY debe tener al menos 32 caracteres en producción")
         return v
+    
+    @validator('DEFAULT_ADMIN_PASSWORD')
+    def validate_admin_password(cls, v, values):
+        """Valida que la contraseña de admin no sea la default en producción."""
+        environment = values.get('ENVIRONMENT', 'development')
+        if environment == 'production':
+            if v.lower() in ['changeme', 'password', 'admin', '123456', 'default']:
+                raise ValueError(
+                    "DEFAULT_ADMIN_PASSWORD no puede ser una contraseña débil en producción. "
+                    "Cambie la contraseña por una segura antes de desplegar."
+                )
+            if len(v) < 12:
+                raise ValueError(
+                    "DEFAULT_ADMIN_PASSWORD debe tener al menos 12 caracteres en producción"
+                )
+        return v
 
 
 @lru_cache()

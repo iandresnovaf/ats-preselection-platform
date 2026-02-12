@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Candidate, CandidateStatus } from "@/types/candidates";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +47,7 @@ function getScoreColor(score: number): string {
   return "text-red-600";
 }
 
-export function CandidateCard({ candidate, onEdit, onDelete, onEvaluate, onChangeStatus }: CandidateCardProps) {
+function CandidateCardComponent({ candidate, onEdit, onDelete, onEvaluate, onChangeStatus }: CandidateCardProps) {
   const status = statusConfig[candidate.status];
   const fullName = `${candidate.first_name} ${candidate.last_name}`;
   const hasEvaluation = !!candidate.last_evaluation;
@@ -164,3 +165,6 @@ export function CandidateCard({ candidate, onEdit, onDelete, onEvaluate, onChang
     </Card>
   );
 }
+
+// Memoize para evitar re-renders innecesarios
+export const CandidateCard = memo(CandidateCardComponent);

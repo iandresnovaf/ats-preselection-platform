@@ -41,11 +41,11 @@ limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 security = HTTPBearer()
 
-# Cookie settings
+# Cookie settings - secure=True en producción
 COOKIE_SETTINGS = {
     "httponly": True,
-    "secure": False,  # True en producción con HTTPS
-    "samesite": "lax",
+    "secure": settings.ENVIRONMENT == "production",
+    "samesite": "strict" if settings.ENVIRONMENT == "production" else "lax",
     "path": "/",
 }
 
