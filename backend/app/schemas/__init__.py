@@ -637,18 +637,34 @@ class CandidateBase(BaseModel):
 
 class CandidateCreate(BaseModel):
     job_opening_id: str = Field(..., max_length=50)
-    raw_data: Dict[str, Any] = Field(..., max_length=100)
+    email: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=50)
+    full_name: Optional[str] = Field(None, max_length=255)
+    raw_data: Optional[Dict[str, Any]] = Field(default_factory=dict)
     source: str = Field(default="manual", max_length=50)
+    extracted_skills: Optional[List[str]] = Field(default_factory=list)
+    extracted_experience: Optional[Any] = Field(None)
+    extracted_education: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
     
     @field_validator('job_opening_id')
     @classmethod
     def validate_job_id(cls, v):
         return validate_uuid(v)
     
+    @field_validator('email')
+    @classmethod
+    def validate_email(cls, v):
+        if v:
+            # Validar formato de email
+            pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if not re.match(pattern, v):
+                raise ValueError("Formato de email inválido")
+        return v
+    
     @field_validator('source')
     @classmethod
     def validate_source(cls, v):
-        allowed = ['manual', 'whatsapp', 'zoho', 'odoo', 'api', 'import']
+        allowed = ['manual', 'whatsapp', 'zoho', 'odoo', 'api', 'import', 'cv_upload']
         if v not in allowed:
             raise ValueError(f"Fuente no válida. Debe ser: {', '.join(allowed)}")
         return v
@@ -656,11 +672,12 @@ class CandidateCreate(BaseModel):
     @field_validator('raw_data')
     @classmethod
     def validate_raw_data_size(cls, v):
-        import json
-        # Limitar tamaño de raw_data
-        data_str = json.dumps(v)
-        if len(data_str) > 50000:  # 50KB max
-            raise ValueError("Los datos raw no pueden exceder 50KB")
+        if v:
+            import json
+            # Limitar tamaño de raw_data
+            data_str = json.dumps(v)
+            if len(data_str) > 50000:  # 50KB max
+                raise ValueError("Los datos raw no pueden exceder 50KB")
         return v
 
 

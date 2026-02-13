@@ -83,11 +83,18 @@ class CandidateService:
     
     async def create_candidate(self, data: CandidateCreate) -> Candidate:
         """Crear nuevo candidato."""
-        # Extraer datos básicos del raw_data
+        # Extraer datos del schema o del raw_data
         raw_data = data.raw_data or {}
-        full_name = raw_data.get("full_name") or raw_data.get("name", "")
-        email = raw_data.get("email", "")
-        phone = raw_data.get("phone", "")
+        
+        # Priorizar datos directos del schema sobre raw_data
+        full_name = data.full_name or raw_data.get("full_name") or raw_data.get("name", "")
+        email = data.email or raw_data.get("email", "")
+        phone = data.phone or raw_data.get("phone", "")
+        
+        # Extraer skills, experiencia y educación
+        extracted_skills = data.extracted_skills or raw_data.get("skills", [])
+        extracted_experience = data.extracted_experience or raw_data.get("experience", [])
+        extracted_education = data.extracted_education or raw_data.get("education", [])
         
         # Normalizar email y teléfono para anti-duplicados
         email_normalized = email.lower().strip() if email else None
@@ -101,9 +108,9 @@ class CandidateService:
             email_normalized=email_normalized,
             phone_normalized=phone_normalized,
             raw_data=raw_data,
-            extracted_skills=raw_data.get("skills", []),
-            extracted_experience=raw_data.get("experience", []),
-            extracted_education=raw_data.get("education", []),
+            extracted_skills=extracted_skills,
+            extracted_experience=extracted_experience,
+            extracted_education=extracted_education,
             status=CandidateStatus.NEW.value,
             source=data.source,
         )
