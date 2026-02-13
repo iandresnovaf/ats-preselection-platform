@@ -55,9 +55,12 @@ export function AccountConfigForm() {
       });
       passwordForm.reset();
     } catch (error: any) {
+      const errorMessage = error.response?.data?.detail
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : "Error al cambiar contraseña";
       toast({
         title: "Error",
-        description: error.response?.data?.detail || "Error al cambiar contraseña",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -81,9 +84,12 @@ export function AccountConfigForm() {
       });
       emailForm.reset();
     } catch (error: any) {
+      const errorMessage = error.response?.data?.detail
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : "Error al cambiar email";
       toast({
         title: "Error",
-        description: error.response?.data?.detail || "Error al cambiar email",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

@@ -62,9 +62,21 @@ export default function UsersPage() {
       });
     },
     onError: (error: any) => {
+      // Manejar diferentes formatos de error del backend
+      let errorMessage = 'Error al crear usuario';
+      if (error.response?.data?.detail) {
+        errorMessage = typeof error.response.data.detail === 'string' 
+          ? error.response.data.detail 
+          : JSON.stringify(error.response.data.detail);
+      } else if (error.response?.data?.msg) {
+        errorMessage = error.response.data.msg;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al crear usuario',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -82,9 +94,12 @@ export default function UsersPage() {
       });
     },
     onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail 
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : 'Error al cambiar estado';
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al cambiar estado',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -102,9 +117,12 @@ export default function UsersPage() {
       });
     },
     onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail 
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : 'Error al eliminar usuario';
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al eliminar usuario',
+        description: errorMessage,
         variant: 'destructive',
       });
     },

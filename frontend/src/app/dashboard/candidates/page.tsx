@@ -119,9 +119,12 @@ export default function CandidatesPage() {
       });
     },
     onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : 'Error al crear el candidato';
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al crear el candidato',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -141,9 +144,12 @@ export default function CandidatesPage() {
       });
     },
     onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : 'Error al actualizar el candidato';
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al actualizar el candidato',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -161,9 +167,12 @@ export default function CandidatesPage() {
       });
     },
     onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : 'Error al eliminar el candidato';
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al eliminar el candidato',
+        description: errorMessage,
         variant: 'destructive',
       });
     },
@@ -183,9 +192,12 @@ export default function CandidatesPage() {
       });
     },
     onError: (error: any) => {
+      const errorMessage = error.response?.data?.detail
+        ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail))
+        : 'Error al cambiar el estado';
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al cambiar el estado',
+        description: errorMessage,
         variant: 'destructive',
       });
     },

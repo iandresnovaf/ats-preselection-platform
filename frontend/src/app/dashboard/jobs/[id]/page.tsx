@@ -124,7 +124,7 @@ export default function JobDetailPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al actualizar la oferta',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al actualizar la oferta'),
         variant: 'destructive',
       });
     },
@@ -145,7 +145,7 @@ export default function JobDetailPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al agregar el candidato',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al agregar el candidato'),
         variant: 'destructive',
       });
     },

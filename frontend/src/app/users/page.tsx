@@ -76,7 +76,7 @@ export default function UsersPage() {
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.response?.data?.detail || "Error al crear usuario",
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : "Error al crear usuario"),
         variant: "destructive",
       });
     } finally {

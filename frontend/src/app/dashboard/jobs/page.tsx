@@ -92,7 +92,7 @@ export default function JobsPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al crear la oferta',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al crear la oferta'),
         variant: 'destructive',
       });
     },
@@ -113,7 +113,7 @@ export default function JobsPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al actualizar la oferta',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al actualizar la oferta'),
         variant: 'destructive',
       });
     },
@@ -133,7 +133,7 @@ export default function JobsPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al eliminar la oferta',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al eliminar la oferta'),
         variant: 'destructive',
       });
     },
@@ -153,7 +153,7 @@ export default function JobsPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al cerrar la oferta',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al cerrar la oferta'),
         variant: 'destructive',
       });
     },
@@ -172,7 +172,7 @@ export default function JobsPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al pausar la oferta',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al pausar la oferta'),
         variant: 'destructive',
       });
     },
@@ -191,7 +191,7 @@ export default function JobsPage() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.response?.data?.detail || 'Error al activar la oferta',
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : 'Error al activar la oferta'),
         variant: 'destructive',
       });
     },

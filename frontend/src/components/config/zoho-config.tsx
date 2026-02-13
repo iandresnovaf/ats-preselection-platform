@@ -92,7 +92,7 @@ export function ZohoConfigForm() {
     } catch (error: any) {
       toast({
         title: "Error de conexión",
-        description: error.response?.data?.detail || "No se pudo conectar con Zoho",
+        description: (error.response?.data?.detail ? (typeof error.response.data.detail === 'string' ? error.response.data.detail : JSON.stringify(error.response.data.detail)) : "No se pudo conectar con Zoho"),
         variant: "destructive",
       });
     } finally {
