@@ -20,6 +20,9 @@ import {
   User,
   Briefcase,
   ChevronDown,
+  Building2,
+  GitBranch,
+  FileText,
 } from "lucide-react";
 
 export function Navbar() {
@@ -75,6 +78,12 @@ export function Navbar() {
       label: "Configuración",
       icon: Settings,
       show: isAdmin,
+    },
+    {
+      href: "/dashboard/rhtools/clients",
+      label: "RH Tools",
+      icon: Building2,
+      show: true,
     },
   ];
 
