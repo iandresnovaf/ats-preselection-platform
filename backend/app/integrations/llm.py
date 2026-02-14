@@ -9,7 +9,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 from app.core.config import settings
 from app.core.security import decrypt_value
-from app.services.configuration_service import ConfigurationService
 from app.schemas import LLMConfig
 
 logger = logging.getLogger(__name__)
@@ -49,6 +48,9 @@ class LLMClient:
         
     async def initialize(self, db_session=None):
         """Inicializa el cliente cargando configuración si es necesario."""
+        # Importación lazy para evitar circular imports
+        from app.services.configuration_service import ConfigurationService
+        
         if self._initialized:
             return
             
