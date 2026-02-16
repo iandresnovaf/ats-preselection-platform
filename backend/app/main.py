@@ -17,6 +17,8 @@ from app.core.database import engine, Base
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_logging import SecurityLogger
 from app.api import config, auth, users, jobs, candidates, evaluations, matching, health, rhtools
+from app.api.v1 import api_router as core_ats_router
+from app.api.document_pipeline import router as pipeline_router
 from app.api.auth import limiter as auth_limiter
 
 # Logger
@@ -268,6 +270,12 @@ app.include_router(evaluations.router, prefix="/api/v1")
 app.include_router(matching.router, prefix="/api/v1")
 app.include_router(rhtools.router, prefix="/api/v1")
 app.include_router(health.router, prefix="")
+
+# Core ATS API Router v1 (nuevo modelo de datos)
+app.include_router(core_ats_router)
+
+# Document Processing Pipeline Router
+app.include_router(pipeline_router, prefix="/api/v1")
 
 
 @app.get("/")

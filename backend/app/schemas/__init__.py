@@ -993,3 +993,46 @@ from app.schemas.rhtools import (
     CandidateOfflimitsBase, CandidateOfflimitsCreate, CandidateOfflimitsUpdate,
     CandidateOfflimitsResponse, CandidateOfflimitsListResponse,
 )
+
+# Importar esquemas Core ATS (nuevo modelo de datos)
+from app.schemas.core_ats import (
+    # Candidates
+    CandidateCreate, CandidateUpdate, CandidateResponse,
+    CandidateListResponse, CandidateWithApplicationsResponse,
+    # Clients
+    ClientCreate as CoreClientCreate,
+    ClientUpdate as CoreClientUpdate,
+    ClientResponse as CoreClientResponse,
+    ClientListResponse as CoreClientListResponse,
+    ClientWithRolesResponse,
+    # Roles (Vacantes)
+    RoleCreate, RoleUpdate, RoleResponse,
+    RoleListResponse, RoleWithApplicationsResponse,
+    RoleWithClientResponse, RoleSummaryResponse,
+    # Applications (Entidad Central)
+    ApplicationCreate, ApplicationUpdate, ApplicationResponse,
+    ApplicationListResponse, ApplicationWithDetailsResponse,
+    ApplicationStageUpdate, ApplicationDecisionUpdate,
+    ApplicationTimelineResponse, ApplicationTimelineEvent,
+    ApplicationScoresSummary, ApplicationFlagsSummary,
+    ApplicationSummaryResponse,
+    # Documents
+    DocumentUploadRequest,
+    DocumentResponse as CoreDocumentResponse,
+    # Interviews
+    InterviewCreate, InterviewUpdate, InterviewResponse,
+    InterviewWithDocumentResponse,
+    # Assessments
+    AssessmentCreate, AssessmentUpdate, AssessmentResponse,
+    AssessmentWithScoresResponse, AssessmentScoreCreate,
+    AssessmentScoreBatchCreate, AssessmentScoreResponse,
+    # Flags
+    FlagCreate, FlagUpdate, FlagResponse,
+    FlagListResponse, ApplicationFlagsSummary as FlagsSummary,
+    # Reports
+    TernaReportResponse, TernaCandidateComparison,
+    RoleAnalyticsResponse, RoleAnalyticsMetrics,
+    CandidateHistoryResponse, CandidateHistoryApplication,
+    # Audit
+    AuditLogResponse,
+)

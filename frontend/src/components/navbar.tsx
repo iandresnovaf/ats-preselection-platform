@@ -23,6 +23,9 @@ import {
   Building2,
   GitBranch,
   FileText,
+  Target,
+  BarChart3,
+  GitCompare,
 } from "lucide-react";
 
 export function Navbar() {
@@ -50,21 +53,33 @@ export function Navbar() {
       show: true,
     },
     {
-      href: "/dashboard/jobs",
-      label: "Ofertas",
+      href: "/roles",
+      label: "Vacantes",
       icon: Briefcase,
       show: true,
     },
     {
-      href: "/dashboard/candidates",
+      href: "/candidates",
       label: "Candidatos",
       icon: Users,
       show: true,
     },
     {
+      href: "/terna-comparator",
+      label: "Comparador",
+      icon: GitCompare,
+      show: true,
+    },
+    {
+      href: "/reports",
+      label: "Reportes",
+      icon: BarChart3,
+      show: true,
+    },
+    {
       href: "/dashboard/evaluations",
       label: "Evaluaciones",
-      icon: Users,
+      icon: Target,
       show: true,
     },
     {

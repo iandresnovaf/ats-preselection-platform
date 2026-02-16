@@ -80,6 +80,32 @@ from app.models.evaluation import Evaluation
 from app.models.match_result import MatchResult, MatchRecommendation, MatchingAuditLog
 from app.models.rhtools import Document, DocumentTextExtraction, ResumeParse
 
+# Importar modelos Core ATS (nuevo modelo de datos)
+from app.models.core_ats import (
+    # Entidades principales
+    Candidate as CoreCandidate,
+    Client,
+    Role,
+    Application,
+    # Documentos y evidencia
+    Document as CoreDocument,
+    # Proceso de selección
+    Interview,
+    Assessment,
+    AssessmentScore,
+    Flag,
+    # Auditoría
+    AuditLog as CoreAuditLog,
+    # Enums
+    RoleStatus,
+    ApplicationStage,
+    DocumentType as CoreDocumentType,
+    AssessmentType,
+    FlagSeverity,
+    FlagSource,
+    AuditAction,
+)
+
 
 class CandidateDecision(Base):
     """Decisión del consultor sobre un candidato."""
