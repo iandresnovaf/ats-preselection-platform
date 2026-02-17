@@ -130,6 +130,7 @@ interface PipelineTimelineProps {
   transitions?: StageTransition[];
   onStageClick?: (stage: PipelineStage) => void;
   className?: string;
+  showAllStages?: boolean;
 }
 
 export function PipelineTimeline({
@@ -137,8 +138,10 @@ export function PipelineTimeline({
   transitions = [],
   onStageClick,
   className,
+  showAllStages = false,
 }: PipelineTimelineProps) {
   const currentOrder = PIPELINE_STAGES.find(s => s.value === currentStage)?.order || 0;
+  const currentCategory = PIPELINE_STAGES.find(s => s.value === currentStage)?.category;
   
   // Crear mapa de transiciones
   const transitionMap = new Map<string, StageTransition>();
@@ -146,8 +149,32 @@ export function PipelineTimeline({
     transitionMap.set(t.to_stage, t);
   });
 
-  // Filtrar etapas relevantes (no mostrar rejected en el flujo normal)
-  const stages = PIPELINE_STAGES.filter(s => s.value !== "rejected");
+  // Filtrar etapas a mostrar
+  let stages = PIPELINE_STAGES;
+  
+  if (!showAllStages) {
+    // Si es etapa final (hired/discarded), mostrar todas hasta el final
+    if (currentCategory === 'final') {
+      stages = PIPELINE_STAGES.filter(s => s.order <= currentOrder || s.category === 'final');
+    } else {
+      // Filtrar etapas relevantes basadas en el flujo actual
+      stages = PIPELINE_STAGES.filter(s => {
+        // Siempre mostrar etapas iniciales
+        if (s.category === 'initial') return true;
+        // Mostrar etapas completadas
+        if (s.order < currentOrder) return true;
+        // Mostrar etapa actual
+        if (s.value === currentStage) return true;
+        // Mostrar siguiente etapa lógica
+        if (s.order === currentOrder + 1) return true;
+        // No mostrar etapas alternativas de otras categorías
+        return false;
+      });
+    }
+  }
+
+  // Ordenar por orden
+  stages = stages.sort((a, b) => a.order - b.order);
 
   return (
     <div className={cn("space-y-0", className)}>
@@ -174,15 +201,16 @@ export function PipelineTimeline({
         );
       })}
 
-      {/* Si está rechazado, mostrarlo al final */}
-      {currentStage === "rejected" && (
+      {/* Si está en estado final negativo, mostrarlo */}
+      {(currentStage === "discarded" || currentStage === "not_interested" || 
+        currentStage === "no_response" || currentStage === "offer_rejected") && (
         <TimelineStageItem
-          stage="rejected"
+          stage={currentStage}
           isActive={true}
           isLast={true}
-          date={transitionMap.get("rejected")?.created_at}
-          responsible={transitionMap.get("rejected")?.changed_by_user?.full_name}
-          notes={transitionMap.get("rejected")?.notes}
+          date={transitionMap.get(currentStage)?.created_at}
+          responsible={transitionMap.get(currentStage)?.changed_by_user?.full_name}
+          notes={transitionMap.get(currentStage)?.notes}
         />
       )}
     </div>
@@ -238,27 +266,54 @@ export function MiniPipeline({ currentStage, className }: MiniPipelineProps) {
 interface StageBadgeProps {
   stage: PipelineStage;
   className?: string;
+  size?: "sm" | "md" | "lg";
 }
 
-export function StageBadge({ stage, className }: StageBadgeProps) {
-  const config: Record<PipelineStage, { bg: string; text: string; label: string }> = {
-    sourcing: { bg: "bg-gray-100", text: "text-gray-700", label: "Sourcing" },
-    shortlist: { bg: "bg-blue-100", text: "text-blue-700", label: "Pre-selección" },
-    terna: { bg: "bg-purple-100", text: "text-purple-700", label: "Terna" },
-    interview: { bg: "bg-orange-100", text: "text-orange-700", label: "Entrevista" },
-    offer: { bg: "bg-yellow-100", text: "text-yellow-700", label: "Oferta" },
-    hired: { bg: "bg-green-100", text: "text-green-700", label: "Contratado" },
-    rejected: { bg: "bg-red-100", text: "text-red-700", label: "Rechazado" },
+export function StageBadge({ stage, className, size = "sm" }: StageBadgeProps) {
+  const config: Record<PipelineStage, { bg: string; text: string; border?: string }> = {
+    // Etapas iniciales
+    sourcing: { bg: "bg-gray-100", text: "text-gray-700" },
+    shortlist: { bg: "bg-blue-100", text: "text-blue-700" },
+    terna: { bg: "bg-indigo-100", text: "text-indigo-700" },
+    // Etapas de contacto
+    contact_pending: { bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
+    contacted: { bg: "bg-cyan-100", text: "text-cyan-700" },
+    interested: { bg: "bg-emerald-100", text: "text-emerald-700" },
+    not_interested: { bg: "bg-slate-100", text: "text-slate-600" },
+    no_response: { bg: "bg-orange-100", text: "text-orange-700" },
+    // Etapas de entrevista
+    interview_scheduled: { bg: "bg-violet-100", text: "text-violet-700" },
+    interview_done: { bg: "bg-purple-100", text: "text-purple-700" },
+    // Etapas de oferta
+    offer_sent: { bg: "bg-yellow-100", text: "text-yellow-800" },
+    offer_accepted: { bg: "bg-green-100", text: "text-green-700" },
+    offer_rejected: { bg: "bg-rose-100", text: "text-rose-700" },
+    // Estados finales
+    hired: { bg: "bg-green-100", text: "text-green-800" },
+    discarded: { bg: "bg-red-100", text: "text-red-700" },
+    // Legacy (para compatibilidad)
+    interview: { bg: "bg-orange-100", text: "text-orange-700" },
+    offer: { bg: "bg-yellow-100", text: "text-yellow-700" },
+    rejected: { bg: "bg-red-100", text: "text-red-700" },
   };
 
-  const { bg, text, label } = config[stage];
+  const style = config[stage] || config.sourcing;
+  const label = getStageLabel(stage);
+
+  const sizeClasses = {
+    sm: "px-2.5 py-0.5 text-xs",
+    md: "px-3 py-1 text-sm",
+    lg: "px-4 py-1.5 text-base",
+  };
 
   return (
     <span
       className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium",
-        bg,
-        text,
+        "inline-flex items-center rounded-full font-medium",
+        style.bg,
+        style.text,
+        style.border && `border ${style.border}`,
+        sizeClasses[size],
         className
       )}
     >

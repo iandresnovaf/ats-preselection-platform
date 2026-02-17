@@ -1,5 +1,5 @@
 """
-Core ATS API - Candidates Router
+Core ATS API - HHCandidates Router
 Endpoints para gestión de candidatos.
 """
 from typing import List, Optional
@@ -10,14 +10,14 @@ from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.core_ats import Candidate, Application, Role, Client
+from app.models.core_ats import HHCandidate, HHApplication, HHRole, HHClient
 from app.schemas.core_ats import (
     CandidateCreate, CandidateUpdate, CandidateResponse,
     CandidateListResponse, CandidateWithApplicationsResponse,
     ApplicationSummaryResponse
 )
 
-router = APIRouter(prefix="/candidates", tags=["Candidates"])
+router = APIRouter(prefix="/candidates", tags=["HHCandidates"])
 
 
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
@@ -27,7 +27,7 @@ def create_candidate(
     current_user: dict = Depends(get_current_user)
 ):
     """Crear un nuevo candidato."""
-    db_candidate = Candidate(**candidate.model_dump())
+    db_candidate = HHCandidate(**candidate.model_dump())
     db.add(db_candidate)
     db.commit()
     db.refresh(db_candidate)
@@ -43,14 +43,14 @@ def list_candidates(
     current_user: dict = Depends(get_current_user)
 ):
     """Listar candidatos con paginación y búsqueda."""
-    query = db.query(Candidate)
+    query = db.query(HHCandidate)
     
     if search:
         search_filter = f"%{search}%"
         query = query.filter(
-            (Candidate.full_name.ilike(search_filter)) |
-            (Candidate.email.ilike(search_filter)) |
-            (Candidate.phone.ilike(search_filter))
+            (HHCandidate.full_name.ilike(search_filter)) |
+            (HHCandidate.email.ilike(search_filter)) |
+            (HHCandidate.phone.ilike(search_filter))
         )
     
     total = query.count()
@@ -71,7 +71,7 @@ def get_candidate(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener un candidato por ID."""
-    candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+    candidate = db.query(HHCandidate).filter(HHCandidate.candidate_id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
     return candidate
@@ -85,7 +85,7 @@ def update_candidate(
     current_user: dict = Depends(get_current_user)
 ):
     """Actualizar un candidato."""
-    db_candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+    db_candidate = db.query(HHCandidate).filter(HHCandidate.candidate_id == candidate_id).first()
     if not db_candidate:
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
     
@@ -105,14 +105,14 @@ def get_candidate_applications(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener candidato con todas sus aplicaciones."""
-    candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+    candidate = db.query(HHCandidate).filter(HHCandidate.candidate_id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
     
     # Cargar aplicaciones con relaciones
-    applications = db.query(Application).options(
-        joinedload(Application.role).joinedload(Role.client)
-    ).filter(Application.candidate_id == candidate_id).all()
+    applications = db.query(HHApplication).options(
+        joinedload(HHApplication.role).joinedload(HHRole.client)
+    ).filter(HHApplication.candidate_id == candidate_id).all()
     
     # Construir respuesta
     candidate_data = CandidateResponse.model_validate(candidate)

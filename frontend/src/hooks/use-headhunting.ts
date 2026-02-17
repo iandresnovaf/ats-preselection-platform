@@ -32,15 +32,7 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
-});
-
-// Interceptor para agregar token
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  withCredentials: true, // Importante: enviar cookies httpOnly
 });
 
 // ==================== DASHBOARD ====================
@@ -464,6 +456,139 @@ export function useExportReport() {
       link.remove();
       
       return true;
+    },
+  });
+}
+
+// ==================== CLIENTS ====================
+
+export function useClients() {
+  return useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const { data } = await api.get("/clients");
+      return data;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutos
+  });
+}
+
+export function useCreateClient() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (payload: {
+      client_name: string;
+      industry?: string;
+    }) => {
+      const { data } = await api.post("/clients", payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+// ==================== CANDIDATES ====================
+
+export function useCreateCandidate() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (payload: {
+      full_name: string;
+      national_id?: string;
+      email?: string;
+      phone?: string;
+      location?: string;
+      linkedin_url?: string;
+    }) => {
+      const { data } = await api.post("/candidates", payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+    },
+  });
+}
+
+export function useUpdateCandidate() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: Partial<{
+        full_name: string;
+        national_id: string;
+        email: string;
+        phone: string;
+        location: string;
+        linkedin_url: string;
+      }>;
+    }) => {
+      const { data } = await api.patch(`/candidates/${id}`, payload);
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      queryClient.invalidateQueries({ queryKey: ["candidates", variables.id] });
+    },
+  });
+}
+
+// ==================== ASSESSMENTS ====================
+
+export function useCreateAssessment() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (payload: {
+      application_id: string;
+      assessment_type: string;
+      assessment_date?: string;
+      sincerity_score?: number;
+      raw_pdf_id?: string;
+    }) => {
+      const { data } = await api.post("/assessments", payload);
+      return data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ 
+        queryKey: ["applications", variables.application_id] 
+      });
+    },
+  });
+}
+
+export function useAddAssessmentScores() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({
+      assessmentId,
+      scores,
+    }: {
+      assessmentId: string;
+      scores: Array<{
+        dimension: string;
+        value: number;
+        unit?: string;
+        source_page?: number;
+      }>;
+    }) => {
+      const { data } = await api.post(
+        `/assessments/${assessmentId}/scores`,
+        { scores }
+      );
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
     },
   });
 }

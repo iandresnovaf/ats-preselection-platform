@@ -1036,3 +1036,18 @@ from app.schemas.core_ats import (
     # Audit
     AuditLogResponse,
 )
+
+# Importar esquemas de Plantillas de Mensajes
+from app.schemas.message_templates import (
+    # Enums
+    MessageChannel,
+    # Variables
+    TemplateVariableBase, TemplateVariableCreate, TemplateVariableUpdate,
+    TemplateVariableResponse, DEFAULT_TEMPLATE_VARIABLES,
+    # Templates
+    MessageTemplateBase, MessageTemplateCreate, MessageTemplateUpdate,
+    MessageTemplateResponse, MessageTemplateListResponse,
+    # Preview
+    TemplatePreviewRequest, TemplatePreviewResponse,
+    RenderTemplateRequest, RenderTemplateResponse,
+)

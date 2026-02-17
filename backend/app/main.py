@@ -17,6 +17,7 @@ from app.core.database import engine, Base
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_logging import SecurityLogger
 from app.api import config, auth, users, jobs, candidates, evaluations, matching, health, rhtools
+# Core ATS API - Nuevo sistema de headhunting
 from app.api.v1 import api_router as core_ats_router
 from app.api.document_pipeline import router as pipeline_router
 from app.api.auth import limiter as auth_limiter
@@ -276,6 +277,10 @@ app.include_router(core_ats_router)
 
 # Document Processing Pipeline Router
 app.include_router(pipeline_router, prefix="/api/v1")
+
+# WhatsApp Webhook Router (sin prefix para webhook de Meta)
+from app.api.whatsapp_webhook import router as whatsapp_webhook_router
+app.include_router(whatsapp_webhook_router)
 
 
 @app.get("/")

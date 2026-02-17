@@ -79,32 +79,21 @@ from app.models.candidate import Candidate, CandidateStatus
 from app.models.evaluation import Evaluation
 from app.models.match_result import MatchResult, MatchRecommendation, MatchingAuditLog
 from app.models.rhtools import Document, DocumentTextExtraction, ResumeParse
+from app.models.message_templates import MessageTemplate, TemplateVariable, MessageChannel
+
+# Importar modelo de comunicaciones (nuevo modelo completo)
+from app.models.communication import (
+    Communication,
+    CommunicationChannel,
+    CommunicationDirection,
+    CommunicationMessageType,
+    CommunicationStatus,
+    InterestStatus
+)
 
 # Importar modelos Core ATS (nuevo modelo de datos)
-from app.models.core_ats import (
-    # Entidades principales
-    Candidate as CoreCandidate,
-    Client,
-    Role,
-    Application,
-    # Documentos y evidencia
-    Document as CoreDocument,
-    # Proceso de selección
-    Interview,
-    Assessment,
-    AssessmentScore,
-    Flag,
-    # Auditoría
-    AuditLog as CoreAuditLog,
-    # Enums
-    RoleStatus,
-    ApplicationStage,
-    DocumentType as CoreDocumentType,
-    AssessmentType,
-    FlagSeverity,
-    FlagSource,
-    AuditAction,
-)
+# NOTA: Usar directamente desde app.models.core_ats para evitar conflictos
+# Ejemplo: from app.models.core_ats import Candidate as HHCandidate
 
 
 class CandidateDecision(Base):
@@ -130,12 +119,14 @@ class CandidateDecision(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class CommunicationType(str, Enum):
+class LegacyCommunicationType(str, Enum):
+    """Tipo de comunicación LEGACY."""
     WHATSAPP = "whatsapp"
     EMAIL = "email"
 
 
-class CommunicationStatus(str, Enum):
+class LegacyCommunicationStatus(str, Enum):
+    """Estados de comunicación LEGACY."""
     PENDING = "pending"
     SENT = "sent"
     DELIVERED = "delivered"
@@ -143,17 +134,17 @@ class CommunicationStatus(str, Enum):
     FAILED = "failed"
 
 
-class Communication(Base):
-    """Mensaje enviado al candidato."""
-    __tablename__ = "communications"
+class LegacyCommunication(Base):
+    """Mensaje enviado al candidato (LEGACY - usar Communication nuevo)."""
+    __tablename__ = "legacy_communications"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
     candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"))
     candidate = relationship("Candidate", back_populates="communications")
     
-    type = Column(SQLEnum(CommunicationType))
-    status = Column(SQLEnum(CommunicationStatus), default=CommunicationStatus.PENDING)
+    type = Column(SQLEnum(LegacyCommunicationType))
+    status = Column(SQLEnum(LegacyCommunicationStatus), default=LegacyCommunicationStatus.PENDING)
     
     # Contenido
     template_name = Column(String(100))

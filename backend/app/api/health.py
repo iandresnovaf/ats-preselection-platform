@@ -33,7 +33,7 @@ async def check_database(db: AsyncSession) -> Dict[str, Any]:
     try:
         start = datetime.now()
         result = await db.execute(text("SELECT 1"))
-        await result.fetchone()
+        row = result.fetchone()
         latency_ms = (datetime.now() - start).total_seconds() * 1000
         
         # Intentar obtener información de conexiones activas
@@ -41,8 +41,10 @@ async def check_database(db: AsyncSession) -> Dict[str, Any]:
             conn_result = await db.execute(text(
                 "SELECT count(*) FROM pg_stat_activity WHERE state = 'active'"
             ))
-            active_connections = (await conn_result.fetchone())[0]
-            db_connections_active.set(active_connections)
+            conn_row = conn_result.fetchone()
+            active_connections = conn_row[0] if conn_row else None
+            if active_connections is not None:
+                db_connections_active.set(active_connections)
         except:
             active_connections = None
         

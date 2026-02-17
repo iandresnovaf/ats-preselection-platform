@@ -12,8 +12,9 @@ from sqlalchemy import func, desc, asc
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.core_ats import (
-    Application, Candidate, Role, Client, Assessment, Flag,
-    Interview, AssessmentScore
+    HHAuditLog,
+    HHApplication, HHCandidate, HHRole, HHClient, HHAssessment, HHFlag,
+    HHInterview, HHAssessmentScore
 )
 from app.schemas.core_ats import (
     TernaReportResponse, TernaCandidateComparison,
@@ -35,28 +36,28 @@ def get_terna_report(
     Reporte de comparación de terna.
     Compara candidatos para una misma vacante.
     """
-    role = db.query(Role).options(
-        joinedload(Role.client)
-    ).filter(Role.role_id == role_id).first()
+    role = db.query(HHRole).options(
+        joinedload(HHRole.client)
+    ).filter(HHRole.role_id == role_id).first()
     
     if not role:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
     
     # Query de aplicaciones
-    apps_query = db.query(Application).options(
-        joinedload(Application.candidate),
-        joinedload(Application.assessments).joinedload(Assessment.scores),
-        joinedload(Application.flags),
-        joinedload(Application.interviews)
-    ).filter(Application.role_id == role_id)
+    apps_query = db.query(HHApplication).options(
+        joinedload(HHApplication.candidate),
+        joinedload(HHApplication.assessments).joinedload(HHAssessment.scores),
+        joinedload(HHApplication.flags),
+        joinedload(HHApplication.interviews)
+    ).filter(HHApplication.role_id == role_id)
     
     if candidate_ids:
-        apps_query = apps_query.filter(Application.candidate_id.in_(candidate_ids))
+        apps_query = apps_query.filter(HHApplication.candidate_id.in_(candidate_ids))
     else:
         # Por defecto, candidatos en etapa terna o con mejor score
         apps_query = apps_query.filter(
-            Application.stage.in_(['terna', 'interview', 'offer', 'hired'])
-        ).order_by(desc(Application.overall_score).nullslast())
+            HHApplication.stage.in_(['terna', 'interview', 'offer', 'hired'])
+        ).order_by(desc(HHApplication.overall_score).nullslast())
     
     applications = apps_query.limit(5).all()
     
@@ -107,18 +108,18 @@ def get_role_analytics(
     """
     Análisis de métricas para una vacante específica.
     """
-    role = db.query(Role).options(
-        joinedload(Role.client)
-    ).filter(Role.role_id == role_id).first()
+    role = db.query(HHRole).options(
+        joinedload(HHRole.client)
+    ).filter(HHRole.role_id == role_id).first()
     
     if not role:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
     
     # Conteos por etapa
     stage_counts = db.query(
-        Application.stage,
-        func.count(Application.application_id).label('count')
-    ).filter(Application.role_id == role_id).group_by(Application.stage).all()
+        HHApplication.stage,
+        func.count(HHApplication.application_id).label('count')
+    ).filter(HHApplication.role_id == role_id).group_by(HHApplication.stage).all()
     
     by_stage = {s.stage.value if hasattr(s.stage, 'value') else s.stage: s.count for s in stage_counts}
     
@@ -128,16 +129,16 @@ def get_role_analytics(
     rejected_count = by_stage.get('rejected', 0)
     
     # Score promedio
-    avg_score = db.query(func.avg(Application.overall_score)).filter(
-        Application.role_id == role_id,
-        Application.overall_score.isnot(None)
+    avg_score = db.query(func.avg(HHApplication.overall_score)).filter(
+        HHApplication.role_id == role_id,
+        HHApplication.overall_score.isnot(None)
     ).scalar()
     
     # Tiempo promedio de contratación (días desde sourcing a hired)
-    hired_apps = db.query(Application).filter(
-        Application.role_id == role_id,
-        Application.hired == True,
-        Application.decision_date.isnot(None)
+    hired_apps = db.query(HHApplication).filter(
+        HHApplication.role_id == role_id,
+        HHApplication.hired == True,
+        HHApplication.decision_date.isnot(None)
     ).all()
     
     avg_days = None
@@ -178,13 +179,13 @@ def get_candidate_history(
     """
     Historial completo de aplicaciones de un candidato.
     """
-    candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+    candidate = db.query(HHCandidate).filter(HHCandidate.candidate_id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidato no encontrado")
     
-    applications = db.query(Application).options(
-        joinedload(Application.role).joinedload(Role.client)
-    ).filter(Application.candidate_id == candidate_id).order_by(desc(Application.created_at)).all()
+    applications = db.query(HHApplication).options(
+        joinedload(HHApplication.role).joinedload(HHRole.client)
+    ).filter(HHApplication.candidate_id == candidate_id).order_by(desc(HHApplication.created_at)).all()
     
     applications_data = []
     for app in applications:

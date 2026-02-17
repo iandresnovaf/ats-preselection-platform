@@ -1,5 +1,5 @@
 """
-Core ATS API - Clients Router
+Core ATS API - HHClients Router
 Endpoints para gestión de clientes.
 """
 from typing import List, Optional
@@ -10,13 +10,13 @@ from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.core_ats import Client, Role
+from app.models.core_ats import HHClient, HHRole
 from app.schemas.core_ats import (
     ClientCreate, ClientUpdate, ClientResponse,
     ClientListResponse, ClientWithRolesResponse, RoleSummaryResponse
 )
 
-router = APIRouter(prefix="/clients", tags=["Clients"])
+router = APIRouter(prefix="/clients", tags=["HHClients"])
 
 
 @router.post("", response_model=ClientResponse, status_code=status.HTTP_201_CREATED)
@@ -26,7 +26,16 @@ def create_client(
     current_user: dict = Depends(get_current_user)
 ):
     """Crear un nuevo cliente."""
-    db_client = Client(**client.model_dump())
+    import uuid
+    from datetime import datetime
+    
+    db_client = HHClient(
+        client_id=uuid.uuid4(),
+        client_name=client.client_name,
+        industry=client.industry,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
     db.add(db_client)
     db.commit()
     db.refresh(db_client)
@@ -43,13 +52,13 @@ def list_clients(
     current_user: dict = Depends(get_current_user)
 ):
     """Listar clientes con paginación y filtros."""
-    query = db.query(Client)
+    query = db.query(HHClient)
     
     if search:
-        query = query.filter(Client.client_name.ilike(f"%{search}%"))
+        query = query.filter(HHClient.client_name.ilike(f"%{search}%"))
     
     if industry:
-        query = query.filter(Client.industry.ilike(f"%{industry}%"))
+        query = query.filter(HHClient.industry.ilike(f"%{industry}%"))
     
     total = query.count()
     clients = query.offset((page - 1) * page_size).limit(page_size).all()
@@ -69,7 +78,7 @@ def get_client(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener un cliente por ID."""
-    client = db.query(Client).filter(Client.client_id == client_id).first()
+    client = db.query(HHClient).filter(HHClient.client_id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return client
@@ -83,7 +92,7 @@ def update_client(
     current_user: dict = Depends(get_current_user)
 ):
     """Actualizar un cliente."""
-    db_client = db.query(Client).filter(Client.client_id == client_id).first()
+    db_client = db.query(HHClient).filter(HHClient.client_id == client_id).first()
     if not db_client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     

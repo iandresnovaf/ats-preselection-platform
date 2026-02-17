@@ -6,22 +6,38 @@
 // ==================== PIPELINE STAGES ====================
 
 export type PipelineStage = 
-  | 'sourcing'
-  | 'shortlist'
-  | 'terna'
-  | 'interview'
-  | 'offer'
-  | 'hired'
-  | 'rejected';
+  | 'sourcing'           // Recién ingresado
+  | 'shortlist'          // Pre-seleccionado
+  | 'terna'              // En terna de 3 candidatos
+  | 'contact_pending'    // Pendiente de contactar (necesita datos)
+  | 'contacted'          // Contactado, esperando respuesta
+  | 'interested'         // Respondió positivamente
+  | 'not_interested'     // Respondió negativamente
+  | 'no_response'        // No respondió (48-72h)
+  | 'interview_scheduled' // Entrevista agendada
+  | 'interview_done'     // Entrevista realizada
+  | 'offer_sent'         // Oferta enviada
+  | 'offer_accepted'     // Oferta aceptada
+  | 'offer_rejected'     // Oferta rechazada
+  | 'hired'              // Contratado
+  | 'discarded';         // Descartado por consultor
 
-export const PIPELINE_STAGES: { value: PipelineStage; label: string; order: number }[] = [
-  { value: 'sourcing', label: 'Sourcing', order: 1 },
-  { value: 'shortlist', label: 'Pre-selección', order: 2 },
-  { value: 'terna', label: 'Terna', order: 3 },
-  { value: 'interview', label: 'Entrevistas', order: 4 },
-  { value: 'offer', label: 'Oferta', order: 5 },
-  { value: 'hired', label: 'Contratado', order: 6 },
-  { value: 'rejected', label: 'Rechazado', order: 99 },
+export const PIPELINE_STAGES: { value: PipelineStage; label: string; order: number; category: string }[] = [
+  { value: 'sourcing', label: 'Recién ingresado', order: 1, category: 'initial' },
+  { value: 'shortlist', label: 'Pre-seleccionado', order: 2, category: 'initial' },
+  { value: 'terna', label: 'En terna', order: 3, category: 'initial' },
+  { value: 'contact_pending', label: 'Pendiente de contactar', order: 4, category: 'contact' },
+  { value: 'contacted', label: 'Contactado', order: 5, category: 'contact' },
+  { value: 'interested', label: 'Interesado', order: 6, category: 'contact' },
+  { value: 'not_interested', label: 'No interesado', order: 97, category: 'contact' },
+  { value: 'no_response', label: 'Sin respuesta', order: 98, category: 'contact' },
+  { value: 'interview_scheduled', label: 'Entrevista agendada', order: 7, category: 'interview' },
+  { value: 'interview_done', label: 'Entrevista realizada', order: 8, category: 'interview' },
+  { value: 'offer_sent', label: 'Oferta enviada', order: 9, category: 'offer' },
+  { value: 'offer_accepted', label: 'Oferta aceptada', order: 10, category: 'offer' },
+  { value: 'offer_rejected', label: 'Oferta rechazada', order: 96, category: 'offer' },
+  { value: 'hired', label: 'Contratado', order: 11, category: 'final' },
+  { value: 'discarded', label: 'Descartado', order: 99, category: 'final' },
 ];
 
 export function getStageLabel(stage: PipelineStage): string {

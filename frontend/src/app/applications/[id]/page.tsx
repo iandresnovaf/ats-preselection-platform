@@ -59,7 +59,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { PipelineStage } from "@/types/headhunting";
-import { PIPELINE_STAGES } from "@/types/headhunting";
+import { PIPELINE_STAGES, getStageLabel } from "@/types/headhunting";
 
 export default function ApplicationDetailPage() {
   const params = useParams();
@@ -231,13 +231,13 @@ export default function ApplicationDetailPage() {
                 <Select
                   value={application.stage}
                   onValueChange={(v) => handleStageChange(v as PipelineStage)}
-                  disabled={application.stage === "hired" || application.stage === "rejected"}
+                  disabled={application.stage === "hired" || application.stage === "discarded"}
                 >
-                  <SelectTrigger className="w-[200px] mt-1">
+                  <SelectTrigger className="w-[220px] mt-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {PIPELINE_STAGES.map((stage) => (
+                    {PIPELINE_STAGES.filter(s => s.category !== 'final' || s.value === application.stage).map((stage) => (
                       <SelectItem key={stage.value} value={stage.value}>
                         {stage.label}
                       </SelectItem>
@@ -416,7 +416,7 @@ export default function ApplicationDetailPage() {
                     Esta aplicación está en etapa: <StageBadge stage={application.stage} />
                   </p>
                   
-                  {application.stage === "offer" ? (
+                  {application.stage === "offer_sent" || application.stage === "offer_accepted" ? (
                     <div className="flex justify-center gap-4">
                       <Button
                         variant="default"
@@ -447,7 +447,7 @@ export default function ApplicationDetailPage() {
                       <p>La decisión final está disponible en la etapa de Oferta</p>
                       <Button
                         className="mt-4"
-                        onClick={() => handleStageChange("offer")}
+                        onClick={() => handleStageChange("offer_sent")}
                         disabled={updateStage.isPending}
                       >
                         {updateStage.isPending ? (

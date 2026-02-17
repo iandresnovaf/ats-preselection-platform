@@ -1,5 +1,5 @@
 """
-Core ATS API - Assessments Router
+Core ATS API - HHAssessments Router
 Endpoints para gestión de evaluaciones psicométricas y sus scores dinámicos.
 """
 from typing import List
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.core_ats import Assessment, AssessmentScore, Application, Document
+from app.models.core_ats import HHAssessment, HHAssessmentScore, HHApplication, HHDocument
 from app.schemas.core_ats import (
     AssessmentCreate, AssessmentUpdate, AssessmentResponse,
     AssessmentWithScoresResponse, AssessmentScoreCreate,
@@ -27,20 +27,20 @@ def create_assessment(
 ):
     """Crear una nueva evaluación psicométrica."""
     # Verificar que la aplicación existe
-    application = db.query(Application).filter(
-        Application.application_id == assessment.application_id
+    application = db.query(HHApplication).filter(
+        HHApplication.application_id == assessment.application_id
     ).first()
     if not application:
         raise HTTPException(status_code=404, detail="Aplicación no encontrada")
     
     # Verificar que el documento existe si se proporciona
     if assessment.raw_pdf_id:
-        doc = db.query(Document).filter(Document.document_id == assessment.raw_pdf_id).first()
+        doc = db.query(HHDocument).filter(HHDocument.document_id == assessment.raw_pdf_id).first()
         if not doc:
-            raise HTTPException(status_code=404, detail="Documento no encontrado")
+            raise HTTPException(status_code=404, detail="HHDocumento no encontrado")
     
     assessment_data = assessment.model_dump()
-    db_assessment = Assessment(**assessment_data)
+    db_assessment = HHAssessment(**assessment_data)
     db.add(db_assessment)
     db.commit()
     db.refresh(db_assessment)
@@ -55,10 +55,10 @@ def get_assessment(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener una evaluación con todos sus scores."""
-    assessment = db.query(Assessment).options(
-        joinedload(Assessment.scores),
-        joinedload(Assessment.raw_document)
-    ).filter(Assessment.assessment_id == assessment_id).first()
+    assessment = db.query(HHAssessment).options(
+        joinedload(HHAssessment.scores),
+        joinedload(HHAssessment.raw_document)
+    ).filter(HHAssessment.assessment_id == assessment_id).first()
     
     if not assessment:
         raise HTTPException(status_code=404, detail="Evaluación no encontrada")
@@ -100,7 +100,7 @@ def create_assessment_scores(
     Este diseño dinámico permite guardar cualquier dimensión sin cambiar el schema.
     """
     # Verificar que la evaluación existe
-    assessment = db.query(Assessment).filter(Assessment.assessment_id == assessment_id).first()
+    assessment = db.query(HHAssessment).filter(HHAssessment.assessment_id == assessment_id).first()
     if not assessment:
         raise HTTPException(status_code=404, detail="Evaluación no encontrada")
     
@@ -113,7 +113,7 @@ def create_assessment_scores(
                 detail=f"El valor {score_create.value} está fuera del rango 0-100"
             )
         
-        db_score = AssessmentScore(
+        db_score = HHAssessmentScore(
             assessment_id=assessment_id,
             dimension=score_create.dimension,
             value=score_create.value,
@@ -147,12 +147,12 @@ def get_assessment_scores(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener todos los scores de una evaluación."""
-    assessment = db.query(Assessment).filter(Assessment.assessment_id == assessment_id).first()
+    assessment = db.query(HHAssessment).filter(HHAssessment.assessment_id == assessment_id).first()
     if not assessment:
         raise HTTPException(status_code=404, detail="Evaluación no encontrada")
     
-    scores = db.query(AssessmentScore).filter(
-        AssessmentScore.assessment_id == assessment_id
+    scores = db.query(HHAssessmentScore).filter(
+        HHAssessmentScore.assessment_id == assessment_id
     ).all()
     
     return [

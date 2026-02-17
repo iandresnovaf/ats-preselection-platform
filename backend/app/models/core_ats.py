@@ -2,6 +2,8 @@
 Nuevo modelo de datos ATS - Core Models
 Data Architecture según especificación exacta.
 La tabla applications es la ENTIDAD CENTRAL.
+
+NOTA: Tablas con prefijo 'hh_' para evitar colisiones con modelo anterior.
 """
 from datetime import datetime
 from enum import Enum
@@ -31,14 +33,31 @@ class RoleStatus(str, Enum):
 
 
 class ApplicationStage(str, Enum):
-    """Etapas del pipeline de aplicación."""
-    SOURCING = "sourcing"
-    SHORTLIST = "shortlist"
-    TERNA = "terna"
-    INTERVIEW = "interview"
-    OFFER = "offer"
-    HIRED = "hired"
-    REJECTED = "rejected"
+    """Etapas detalladas del pipeline de aplicación."""
+    # Etapas iniciales
+    SOURCING = "sourcing"                    # Recién ingresado
+    SHORTLIST = "shortlist"                  # Pre-seleccionado
+    TERNA = "terna"                          # En terna de 3 candidatos
+    
+    # Etapas de contacto
+    CONTACT_PENDING = "contact_pending"      # Pendiente de contactar (necesita datos)
+    CONTACTED = "contacted"                  # Contactado, esperando respuesta
+    INTERESTED = "interested"                # Respondió positivamente
+    NOT_INTERESTED = "not_interested"        # Respondió negativamente
+    NO_RESPONSE = "no_response"              # No respondió (48-72h)
+    
+    # Etapas de entrevista
+    INTERVIEW_SCHEDULED = "interview_scheduled"  # Entrevista agendada
+    INTERVIEW_DONE = "interview_done"        # Entrevista realizada
+    
+    # Etapas de oferta
+    OFFER_SENT = "offer_sent"                # Oferta enviada
+    OFFER_ACCEPTED = "offer_accepted"        # Oferta aceptada
+    OFFER_REJECTED = "offer_rejected"        # Oferta rechazada
+    
+    # Estados finales
+    HIRED = "hired"                          # Contratado
+    DISCARDED = "discarded"                  # Descartado por consultor
 
 
 class DocumentType(str, Enum):
@@ -80,356 +99,319 @@ class AuditAction(str, Enum):
 
 
 # =============================================================================
-# MODELO 1: CANDIDATES
+# MODELO 1: HH_CANDIDATES (Candidatos Headhunting)
 # =============================================================================
 
-class Candidate(Base):
+class HHCandidate(Base):
     """
-    Candidatos del sistema.
-    NOTA: Nunca guardar scores aquí. Los scores van en assessment_scores vía assessments→applications.
+    Candidatos del sistema Headhunting.
+    NOTA: Nunca guardar scores aquí. Los scores van en hh_assessment_scores.
     """
-    __tablename__ = "candidates"
+    __tablename__ = "hh_candidates"
     
     __table_args__ = (
-        # Índices optimizados para búsquedas frecuentes
-        Index('idx_candidates_email', 'email'),
-        Index('idx_candidates_national_id', 'national_id'),
-        Index('idx_candidates_name_search', 'full_name'),
-        Index('idx_candidates_created_at', 'created_at'),
-        # Constraints
-        UniqueConstraint('national_id', name='uix_candidates_national_id'),
+        Index('idx_hh_candidates_email', 'email'),
+        Index('idx_hh_candidates_national_id', 'national_id'),
+        Index('idx_hh_candidates_name', 'full_name'),
+        Index('idx_hh_candidates_created', 'created_at'),
+        UniqueConstraint('national_id', name='uix_hh_candidates_national_id'),
     )
     
     candidate_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name = Column(Text, nullable=False)
-    national_id = Column(Text, nullable=True)  # Cedula/DNI/Pasaporte
+    national_id = Column(Text, nullable=True)
     email = Column(Text, nullable=True)
     phone = Column(Text, nullable=True)
     location = Column(Text, nullable=True)
     linkedin_url = Column(Text, nullable=True)
     
-    # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
-    applications = relationship("Application", back_populates="candidate", cascade="all, delete-orphan")
-    documents = relationship("Document", back_populates="candidate", foreign_keys="Document.candidate_id")
+    applications = relationship("HHApplication", back_populates="candidate", cascade="all, delete-orphan")
+    documents = relationship("HHDocument", back_populates="candidate", foreign_keys="HHDocument.candidate_id")
+    communications = relationship(
+        "Communication",
+        back_populates="candidate",
+        foreign_keys="Communication.candidate_id",
+        cascade="all, delete-orphan"
+    )
 
 
 # =============================================================================
-# MODELO 2: CLIENTS
+# MODELO 2: HH_CLIENTS (Clientes/Empresas)
 # =============================================================================
 
-class Client(Base):
-    """Clientes/empresas que publican vacantes."""
-    __tablename__ = "clients"
+class HHClient(Base):
+    """Clientes o empresas que contratan headhunting."""
+    __tablename__ = "hh_clients"
     
     __table_args__ = (
-        Index('idx_clients_name', 'client_name'),
-        Index('idx_clients_created_at', 'created_at'),
+        Index('idx_hh_clients_name', 'client_name'),
     )
     
     client_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     client_name = Column(Text, nullable=False)
     industry = Column(Text, nullable=True)
     
-    # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
-    roles = relationship("Role", back_populates="client", cascade="all, delete-orphan")
+    roles = relationship("HHRole", back_populates="client", cascade="all, delete-orphan")
 
 
 # =============================================================================
-# MODELO 3: ROLES (VACANTES)
+# MODELO 3: HH_ROLES (Vacantes/Cargos)
 # =============================================================================
 
-class Role(Base):
-    """
-    Vacantes/roles disponibles.
-    NOTA: El documento de descripción del rol es opcional.
-    """
-    __tablename__ = "roles"
+class HHRole(Base):
+    """Vacantes o roles a cubrir."""
+    __tablename__ = "hh_roles"
     
     __table_args__ = (
-        Index('idx_roles_client_id', 'client_id'),
-        Index('idx_roles_status', 'status'),
-        Index('idx_roles_date_opened', 'date_opened'),
-        Index('idx_roles_location', 'location'),
-        Index('idx_roles_seniority', 'seniority'),
-        Index('idx_roles_status_opened', 'status', 'date_opened'),
+        Index('idx_hh_roles_client', 'client_id'),
+        Index('idx_hh_roles_status', 'status'),
+        Index('idx_hh_roles_title', 'role_title'),
     )
     
     role_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.client_id"), nullable=False)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("hh_clients.client_id"), nullable=False)
     role_title = Column(Text, nullable=False)
     location = Column(Text, nullable=True)
     seniority = Column(Text, nullable=True)
-    status = Column(SQLEnum(RoleStatus), nullable=False, default=RoleStatus.OPEN)
-    date_opened = Column(Date, nullable=True)
+    status = Column(SQLEnum(RoleStatus), default=RoleStatus.OPEN, nullable=False)
+    date_opened = Column(Date, default=datetime.utcnow().date)
     date_closed = Column(Date, nullable=True)
-    role_description_doc_id = Column(UUID(as_uuid=True), ForeignKey("documents.document_id"), nullable=True)
+    role_description_doc_id = Column(UUID(as_uuid=True), ForeignKey("hh_documents.document_id"), nullable=True)
     
-    # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
-    client = relationship("Client", back_populates="roles")
-    applications = relationship("Application", back_populates="role", cascade="all, delete-orphan")
-    role_description_doc = relationship("Document", foreign_keys=[role_description_doc_id], post_update=True)
-    documents = relationship("Document", back_populates="role", foreign_keys="Document.role_id")
+    client = relationship("HHClient", back_populates="roles")
+    applications = relationship("HHApplication", back_populates="role", cascade="all, delete-orphan")
+    documents = relationship("HHDocument", back_populates="role", foreign_keys="HHDocument.role_id")
+    role_description_doc = relationship("HHDocument", foreign_keys=[role_description_doc_id])
 
 
 # =============================================================================
-# MODELO 4: APPLICATIONS (ENTIDAD CENTRAL)
+# MODELO 4: HH_APPLICATIONS (ENTIDAD CENTRAL)
 # =============================================================================
 
-class Application(Base):
+class HHApplication(Base):
     """
-    ENTIDAD CENTRAL: Conexión Candidato ↔ Vacante
-    Toda la información de pipeline, scores y decisiones se conecta aquí.
+    ENTIDAD CENTRAL: Postulación de candidato a una vacante.
+    Aquí se almacena todo el proceso de selección.
     """
-    __tablename__ = "applications"
+    __tablename__ = "hh_applications"
     
     __table_args__ = (
-        # Constraint único: un candidato solo puede aplicar una vez a cada vacante
-        UniqueConstraint('candidate_id', 'role_id', name='uix_applications_candidate_role'),
-        # Índices optimizados
-        Index('idx_applications_candidate_id', 'candidate_id'),
-        Index('idx_applications_role_id', 'role_id'),
-        Index('idx_applications_stage', 'stage'),
-        Index('idx_applications_hired', 'hired'),
-        Index('idx_applications_role_stage', 'role_id', 'stage'),
-        Index('idx_applications_candidate_hired', 'candidate_id', 'hired'),
-        Index('idx_applications_decision_date', 'decision_date'),
-        Index('idx_applications_overall_score', 'overall_score'),
+        Index('idx_hh_applications_candidate', 'candidate_id'),
+        Index('idx_hh_applications_role', 'role_id'),
+        Index('idx_hh_applications_stage', 'stage'),
+        Index('idx_hh_applications_hired', 'hired'),
+        Index('idx_hh_applications_score', 'overall_score'),
+        UniqueConstraint('candidate_id', 'role_id', name='uix_hh_applications_candidate_role'),
     )
     
     application_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.candidate_id"), nullable=False)
-    role_id = Column(UUID(as_uuid=True), ForeignKey("roles.role_id"), nullable=False)
-    stage = Column(SQLEnum(ApplicationStage), nullable=False, default=ApplicationStage.SOURCING)
-    hired = Column(Boolean, nullable=False, default=False)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("hh_candidates.candidate_id"), nullable=False)
+    role_id = Column(UUID(as_uuid=True), ForeignKey("hh_roles.role_id"), nullable=False)
+    stage = Column(SQLEnum(ApplicationStage), default=ApplicationStage.SOURCING, nullable=False)
+    hired = Column(Boolean, default=False)
     decision_date = Column(Date, nullable=True)
-    overall_score = Column(Numeric(5, 2), nullable=True)  # Score general 0-100
+    overall_score = Column(Numeric(5, 2), CheckConstraint('overall_score >= 0 AND overall_score <= 100'), nullable=True)
     notes = Column(Text, nullable=True)
     
-    # Metadata
+    # Campos para el nuevo flujo de contacto
+    discard_reason = Column(Text, nullable=True)  # Razón de descarte por consultor
+    initial_contact_date = Column(DateTime, nullable=True)  # Fecha de contacto inicial
+    candidate_response_date = Column(DateTime, nullable=True)  # Fecha de respuesta del candidato
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
-    candidate = relationship("Candidate", back_populates="applications")
-    role = relationship("Role", back_populates="applications")
-    documents = relationship("Document", back_populates="application", foreign_keys="Document.application_id")
-    interviews = relationship("Interview", back_populates="application", cascade="all, delete-orphan")
-    assessments = relationship("Assessment", back_populates="application", cascade="all, delete-orphan")
-    flags = relationship("Flag", back_populates="application", cascade="all, delete-orphan")
+    candidate = relationship("HHCandidate", back_populates="applications")
+    role = relationship("HHRole", back_populates="applications")
+    documents = relationship("HHDocument", back_populates="application", foreign_keys="HHDocument.application_id")
+    interviews = relationship("HHInterview", back_populates="application", cascade="all, delete-orphan")
+    assessments = relationship("HHAssessment", back_populates="application", cascade="all, delete-orphan")
+    flags = relationship("HHFlag", back_populates="application", cascade="all, delete-orphan")
+    communications = relationship(
+        "Communication",
+        back_populates="application",
+        foreign_keys="Communication.application_id",
+        cascade="all, delete-orphan"
+    )
 
 
 # =============================================================================
-# MODELO 5: DOCUMENTS (EVIDENCIA RAW)
+# MODELO 5: HH_DOCUMENTS (Evidencia RAW)
 # =============================================================================
 
-class Document(Base):
-    """
-    Documentos/evidencia del proceso.
-    Puede estar asociado a application, role, o candidate (o combinación).
-    """
-    __tablename__ = "documents"
+class HHDocument(Base):
+    """Documentos PDF/DOCX como evidencia. Solo referencias, no contenido."""
+    __tablename__ = "hh_documents"
     
     __table_args__ = (
-        Index('idx_documents_application_id', 'application_id'),
-        Index('idx_documents_role_id', 'role_id'),
-        Index('idx_documents_candidate_id', 'candidate_id'),
-        Index('idx_documents_doc_type', 'doc_type'),
-        Index('idx_documents_uploaded_at', 'uploaded_at'),
-        Index('idx_documents_sha256', 'sha256_hash'),
+        Index('idx_hh_docs_application', 'application_id'),
+        Index('idx_hh_docs_hash', 'sha256_hash'),
+        Index('idx_hh_docs_type', 'doc_type'),
+        UniqueConstraint('sha256_hash', name='uix_hh_documents_hash'),
     )
     
     document_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    application_id = Column(UUID(as_uuid=True), ForeignKey("applications.application_id"), nullable=True)
-    role_id = Column(UUID(as_uuid=True), ForeignKey("roles.role_id"), nullable=True)
-    candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.candidate_id"), nullable=True)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("hh_applications.application_id"), nullable=True)
+    role_id = Column(UUID(as_uuid=True), ForeignKey("hh_roles.role_id"), nullable=True)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("hh_candidates.candidate_id"), nullable=True)
     doc_type = Column(SQLEnum(DocumentType), nullable=False)
     original_filename = Column(Text, nullable=False)
-    storage_uri = Column(Text, nullable=False)  # URL/path de almacenamiento
-    sha256_hash = Column(Text, nullable=True)   # Para verificación de integridad
-    uploaded_by = Column(Text, nullable=True)   # Email o ID del usuario
+    storage_uri = Column(Text, nullable=False)
+    sha256_hash = Column(Text, nullable=False)
+    uploaded_by = Column(Text, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
-    application = relationship("Application", back_populates="documents", foreign_keys=[application_id])
-    role = relationship("Role", back_populates="documents", foreign_keys=[role_id])
-    candidate = relationship("Candidate", back_populates="documents", foreign_keys=[candidate_id])
-    interviews = relationship("Interview", back_populates="raw_document", foreign_keys="Interview.raw_doc_id")
-    assessments = relationship("Assessment", back_populates="raw_document", foreign_keys="Assessment.raw_pdf_id")
-    flags = relationship("Flag", back_populates="source_document", foreign_keys="Flag.source_doc_id")
+    application = relationship("HHApplication", back_populates="documents", foreign_keys=[application_id])
+    role = relationship("HHRole", back_populates="documents", foreign_keys=[role_id])
+    candidate = relationship("HHCandidate", back_populates="documents", foreign_keys=[candidate_id])
+    interviews = relationship("HHInterview", back_populates="raw_document", foreign_keys="HHInterview.raw_doc_id")
+    assessments = relationship("HHAssessment", back_populates="raw_document", foreign_keys="HHAssessment.raw_pdf_id")
+    flags = relationship("HHFlag", back_populates="source_document", foreign_keys="HHFlag.source_doc_id")
 
 
 # =============================================================================
-# MODELO 6: INTERVIEWS
+# MODELO 6: HH_INTERVIEWS (Entrevistas)
 # =============================================================================
 
-class Interview(Base):
-    """Entrevistas realizadas a candidatos."""
-    __tablename__ = "interviews"
+class HHInterview(Base):
+    """Notas y resumen de entrevistas."""
+    __tablename__ = "hh_interviews"
     
     __table_args__ = (
-        Index('idx_interviews_application_id', 'application_id'),
-        Index('idx_interviews_date', 'interview_date'),
-        Index('idx_interviews_interviewer', 'interviewer'),
+        Index('idx_hh_interviews_application', 'application_id'),
     )
     
     interview_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    application_id = Column(UUID(as_uuid=True), ForeignKey("applications.application_id"), nullable=False)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("hh_applications.application_id"), nullable=False)
     interview_date = Column(DateTime, nullable=True)
     interviewer = Column(Text, nullable=True)
     summary_text = Column(Text, nullable=True)
-    raw_doc_id = Column(UUID(as_uuid=True), ForeignKey("documents.document_id"), nullable=True)
+    raw_doc_id = Column(UUID(as_uuid=True), ForeignKey("hh_documents.document_id"), nullable=True)
     
-    # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
-    application = relationship("Application", back_populates="interviews")
-    raw_document = relationship("Document", back_populates="interviews", foreign_keys=[raw_doc_id])
+    application = relationship("HHApplication", back_populates="interviews")
+    raw_document = relationship("HHDocument", back_populates="interviews", foreign_keys=[raw_doc_id])
 
 
 # =============================================================================
-# MODELO 7: ASSESSMENTS
+# MODELO 7: HH_ASSESSMENTS (Evaluaciones Psicométricas)
 # =============================================================================
 
-class Assessment(Base):
-    """
-    Evaluaciones psicométricas aplicadas.
-    Los scores individuales van en assessment_scores (diseño dinámico).
-    """
-    __tablename__ = "assessments"
+class HHAssessment(Base):
+    """Evaluaciones psicométricas (Factor Oscuro, DISC, etc.)."""
+    __tablename__ = "hh_assessments"
     
     __table_args__ = (
-        Index('idx_assessments_application_id', 'application_id'),
-        Index('idx_assessments_type', 'assessment_type'),
-        Index('idx_assessments_date', 'assessment_date'),
-        Index('idx_assessments_app_type', 'application_id', 'assessment_type'),
+        Index('idx_hh_assessments_application', 'application_id'),
+        Index('idx_hh_assessments_type', 'assessment_type'),
     )
     
     assessment_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    application_id = Column(UUID(as_uuid=True), ForeignKey("applications.application_id"), nullable=False)
+    application_id = Column(UUID(as_uuid=True), ForeignKey("hh_applications.application_id"), nullable=False)
     assessment_type = Column(SQLEnum(AssessmentType), nullable=False)
     assessment_date = Column(Date, nullable=True)
-    sincerity_score = Column(Numeric(5, 2), nullable=True)  # Score de sinceridad 0-100
-    raw_pdf_id = Column(UUID(as_uuid=True), ForeignKey("documents.document_id"), nullable=True)
+    sincerity_score = Column(Numeric(5, 2), CheckConstraint('sincerity_score >= 0 AND sincerity_score <= 100'), nullable=True)
+    raw_pdf_id = Column(UUID(as_uuid=True), ForeignKey("hh_documents.document_id"), nullable=True)
     
-    # Metadata
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
-    application = relationship("Application", back_populates="assessments")
-    raw_document = relationship("Document", back_populates="assessments", foreign_keys=[raw_pdf_id])
-    scores = relationship("AssessmentScore", back_populates="assessment", cascade="all, delete-orphan")
+    application = relationship("HHApplication", back_populates="assessments")
+    raw_document = relationship("HHDocument", back_populates="assessments", foreign_keys=[raw_pdf_id])
+    scores = relationship("HHAssessmentScore", back_populates="assessment", cascade="all, delete-orphan")
 
 
 # =============================================================================
-# MODELO 8: ASSESSMENT_SCORES (SCORES DINÁMICOS)
+# MODELO 8: HH_ASSESSMENT_SCORES (SCORES DINÁMICOS - FILAS, NO COLUMNAS)
 # =============================================================================
 
-class AssessmentScore(Base):
+class HHAssessmentScore(Base):
     """
-    Scores dinámicos de evaluaciones.
-    NO hay columnas fijas - cada dimensión es una fila.
-    Esto permite soportar cualquier tipo de evaluación sin cambiar el schema.
+    SCORES DINÁMICOS: Cada dimensión es una fila.
+    Ejemplo: ('Egocentrismo', 45), ('Volatilidad', 62)
     """
-    __tablename__ = "assessment_scores"
+    __tablename__ = "hh_assessment_scores"
     
     __table_args__ = (
-        # Constraint: valor debe estar entre 0 y 100
-        CheckConstraint('value >= 0 AND value <= 100', name='chk_score_value_range'),
-        Index('idx_assessment_scores_assessment_id', 'assessment_id'),
-        Index('idx_assessment_scores_dimension', 'dimension'),
-        Index('idx_assessment_scores_assessment_dimension', 'assessment_id', 'dimension'),
+        Index('idx_hh_scores_assessment', 'assessment_id'),
+        Index('idx_hh_scores_dimension', 'dimension'),
     )
     
     score_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    assessment_id = Column(UUID(as_uuid=True), ForeignKey("assessments.assessment_id"), nullable=False)
-    dimension = Column(Text, nullable=False)  # Ej: "liderazgo", "trabajo_equipo", "integridad"
-    value = Column(Numeric(5, 2), nullable=False)  # Valor 0-100
-    unit = Column(Text, nullable=False, default='score')  # 'score', 'percentile', 'stanine'
-    source_page = Column(Integer, nullable=True)  # Página del PDF origen
-    
-    # Metadata
+    assessment_id = Column(UUID(as_uuid=True), ForeignKey("hh_assessments.assessment_id"), nullable=False)
+    dimension = Column(Text, nullable=False)  # Ej: "Egocentrismo", "Seguimiento de Gestión"
+    value = Column(Numeric(5, 2), CheckConstraint('value >= 0 AND value <= 100'), nullable=False)
+    unit = Column(Text, default="score", nullable=False)
+    source_page = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
-    assessment = relationship("Assessment", back_populates="scores")
+    assessment = relationship("HHAssessment", back_populates="scores")
 
 
 # =============================================================================
-# MODELO 9: FLAGS (RIESGOS/ALERTAS)
+# MODELO 9: HH_FLAGS (Riesgos y Alertas)
 # =============================================================================
 
-class Flag(Base):
-    """Flags/alertas de riesgo sobre candidatos."""
-    __tablename__ = "flags"
+class HHFlag(Base):
+    """Flags de riesgo detectados en cualquier etapa del proceso."""
+    __tablename__ = "hh_flags"
     
     __table_args__ = (
-        Index('idx_flags_application_id', 'application_id'),
-        Index('idx_flags_severity', 'severity'),
-        Index('idx_flags_category', 'category'),
-        Index('idx_flags_source', 'source'),
-        Index('idx_flags_app_severity', 'application_id', 'severity'),
-        Index('idx_flags_created_at', 'created_at'),
+        Index('idx_hh_flags_application', 'application_id'),
+        Index('idx_hh_flags_severity', 'severity'),
+        Index('idx_hh_flags_category', 'category'),
     )
     
     flag_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    application_id = Column(UUID(as_uuid=True), ForeignKey("applications.application_id"), nullable=False)
-    category = Column(Text, nullable=True)  # Ej: "inconsistencia_cv", "riesgo_psicometrico"
+    application_id = Column(UUID(as_uuid=True), ForeignKey("hh_applications.application_id"), nullable=False)
+    category = Column(Text, nullable=False)  # Ej: "riesgo_ego", "riesgo_conflicto"
     severity = Column(SQLEnum(FlagSeverity), nullable=False)
-    evidence = Column(Text, nullable=True)  # Descripción/evidencia
+    evidence = Column(Text, nullable=True)
     source = Column(SQLEnum(FlagSource), nullable=False)
-    source_doc_id = Column(UUID(as_uuid=True), ForeignKey("documents.document_id"), nullable=True)
-    
-    # Metadata
+    source_doc_id = Column(UUID(as_uuid=True), ForeignKey("hh_documents.document_id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships
-    application = relationship("Application", back_populates="flags")
-    source_document = relationship("Document", back_populates="flags", foreign_keys=[source_doc_id])
+    application = relationship("HHApplication", back_populates="flags")
+    source_document = relationship("HHDocument", back_populates="flags", foreign_keys=[source_doc_id])
 
 
 # =============================================================================
-# MODELO 10: AUDIT_LOG (TRAZABILIDAD)
+# MODELO 10: HH_AUDIT_LOG (Trazabilidad Completa)
 # =============================================================================
 
-class AuditLog(Base):
-    """Log de auditoría para trazabilidad completa."""
-    __tablename__ = "audit_logs"
+class HHAuditLog(Base):
+    """Registro de auditoría para trazabilidad total."""
+    __tablename__ = "hh_audit_log"
     
     __table_args__ = (
-        Index('idx_audit_logs_entity', 'entity_type', 'entity_id'),
-        Index('idx_audit_logs_action', 'action'),
-        Index('idx_audit_logs_changed_by', 'changed_by'),
-        Index('idx_audit_logs_changed_at', 'changed_at'),
-        Index('idx_audit_logs_entity_action', 'entity_type', 'action'),
+        Index('idx_hh_audit_entity', 'entity_type', 'entity_id'),
+        Index('idx_hh_audit_changed_at', 'changed_at'),
     )
     
     audit_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    entity_type = Column(Text, nullable=False)  # 'candidate', 'application', 'role', etc.
+    entity_type = Column(Text, nullable=False)  # 'candidate', 'application', etc.
     entity_id = Column(UUID(as_uuid=True), nullable=False)
     action = Column(SQLEnum(AuditAction), nullable=False)
-    changed_by = Column(Text, nullable=True)  # Email o ID del usuario
+    changed_by = Column(Text, nullable=True)
     changed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    diff_json = Column(JSONB, nullable=True)  # Cambios en formato JSON
-
-
-# =============================================================================
-# VISTAS ÚTILES (opcional, se pueden crear via migration)
-# =============================================================================
-
-# Nota: Las vistas se crearán en la migración para no depender de
-# características específicas de PostgreSQL en el modelo
+    diff_json = Column(JSONB, nullable=True)

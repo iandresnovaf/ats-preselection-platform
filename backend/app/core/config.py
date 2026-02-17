@@ -47,6 +47,16 @@ class Settings(BaseSettings):
     # API Keys (fallback si no hay config en BD)
     OPENAI_API_KEY: Optional[str] = None
     
+    # WhatsApp Business API Configuration
+    WHATSAPP_API_VERSION: str = "v18.0"
+    WHATSAPP_BUSINESS_ACCOUNT_ID: Optional[str] = None  # De Meta Business
+    WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None      # Número de teléfono
+    WHATSAPP_ACCESS_TOKEN: Optional[str] = None         # Token de acceso
+    WHATSAPP_WEBHOOK_VERIFY_TOKEN: Optional[str] = None # Para verificar webhooks
+    WHATSAPP_APP_SECRET: Optional[str] = None           # App Secret para verificación
+    WHATSAPP_MOCK_MODE: bool = False                    # Modo mock para testing
+    WHATSAPP_ENABLED: bool = False                      # Habilitar integración
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

@@ -3,7 +3,7 @@ Schemas Pydantic para el Core ATS API.
 Validación de datos y serialización.
 """
 from datetime import datetime, date
-from decimal import Decimal
+from enum import Enum
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
@@ -190,22 +190,42 @@ class RoleWithApplicationsResponse(RoleResponse):
 # =============================================================================
 
 class ApplicationStage(str):
-    """Enum para etapas de aplicación."""
+    """Enum para etapas detalladas de aplicación."""
+    # Etapas iniciales
     SOURCING = "sourcing"
     SHORTLIST = "shortlist"
     TERNA = "terna"
-    INTERVIEW = "interview"
-    OFFER = "offer"
+    
+    # Etapas de contacto
+    CONTACT_PENDING = "contact_pending"
+    CONTACTED = "contacted"
+    INTERESTED = "interested"
+    NOT_INTERESTED = "not_interested"
+    NO_RESPONSE = "no_response"
+    
+    # Etapas de entrevista
+    INTERVIEW_SCHEDULED = "interview_scheduled"
+    INTERVIEW_DONE = "interview_done"
+    
+    # Etapas de oferta
+    OFFER_SENT = "offer_sent"
+    OFFER_ACCEPTED = "offer_accepted"
+    OFFER_REJECTED = "offer_rejected"
+    
+    # Estados finales
     HIRED = "hired"
-    REJECTED = "rejected"
+    DISCARDED = "discarded"
 
 
 class ApplicationBase(BaseSchema):
     """Base para aplicaciones."""
-    stage: str = Field(default="sourcing", pattern="^(sourcing|shortlist|terna|interview|offer|hired|rejected)$")
+    stage: str = Field(
+        default="sourcing",
+        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
+    )
     hired: bool = False
     decision_date: Optional[date] = None
-    overall_score: Optional[Decimal] = Field(None, ge=0, le=100, decimal_places=2)
+    overall_score: Optional[float] = Field(None, ge=0, le=100)
     notes: Optional[str] = None
 
 
@@ -217,24 +237,56 @@ class ApplicationCreate(ApplicationBase):
 
 class ApplicationUpdate(BaseSchema):
     """Schema para actualizar aplicación."""
-    stage: Optional[str] = Field(None, pattern="^(sourcing|shortlist|terna|interview|offer|hired|rejected)$")
+    stage: Optional[str] = Field(
+        None,
+        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
+    )
     hired: Optional[bool] = None
     decision_date: Optional[date] = None
-    overall_score: Optional[Decimal] = Field(None, ge=0, le=100, decimal_places=2)
+    overall_score: Optional[float] = Field(None, ge=0, le=100)
     notes: Optional[str] = None
 
 
 class ApplicationStageUpdate(BaseSchema):
     """Schema específico para actualizar etapa."""
-    stage: str = Field(..., pattern="^(sourcing|shortlist|terna|interview|offer|hired|rejected)$")
+    stage: str = Field(
+        ...,
+        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
+    )
     notes: Optional[str] = None
+
+
+class ConsultantDecision(str, Enum):
+    """Decisiones posibles del consultor."""
+    CONTINUE = "continue"
+    DISCARD = "discard"
+
+
+class ConsultantDecisionUpdate(BaseSchema):
+    """Schema para decisión del consultor (continuar o descartar)."""
+    decision: str = Field(..., pattern="^(continue|discard)$")
+    reason: Optional[str] = None
+
+
+class ContactStatusUpdate(BaseSchema):
+    """Schema para actualizar estado de contacto."""
+    status: str = Field(
+        ...,
+        pattern="^(contacted|interested|not_interested|no_response)$"
+    )
+
+
+class SendMessageRequest(BaseSchema):
+    """Schema para enviar mensaje a candidato."""
+    template_id: str = Field(..., min_length=1)
+    channel: str = Field(..., pattern="^(email|whatsapp)$")
 
 
 class ApplicationDecisionUpdate(BaseSchema):
     """Schema específico para actualizar decisión."""
     hired: bool
     decision_date: Optional[date] = None
-    overall_score: Optional[Decimal] = Field(None, ge=0, le=100, decimal_places=2)
+    overall_score: Optional[float] = Field(None, ge=0, le=100)
     notes: Optional[str] = None
 
 
@@ -252,7 +304,7 @@ class ApplicationSummaryResponse(BaseSchema):
     role_id: UUID
     stage: str
     hired: bool
-    overall_score: Optional[Decimal]
+    overall_score: Optional[float]
     created_at: datetime
 
 
@@ -381,7 +433,7 @@ class AssessmentBase(BaseSchema):
     """Base para evaluaciones."""
     assessment_type: str = Field(..., pattern="^(factor_oscuro|inteligencia_ejecutiva|kompedisc|other)$")
     assessment_date: Optional[date] = None
-    sincerity_score: Optional[Decimal] = Field(None, ge=0, le=100, decimal_places=2)
+    sincerity_score: Optional[float] = Field(None, ge=0, le=100)
 
 
 class AssessmentCreate(AssessmentBase):
@@ -394,7 +446,7 @@ class AssessmentUpdate(BaseSchema):
     """Schema para actualizar evaluación."""
     assessment_type: Optional[str] = Field(None, pattern="^(factor_oscuro|inteligencia_ejecutiva|kompedisc|other)$")
     assessment_date: Optional[date] = None
-    sincerity_score: Optional[Decimal] = Field(None, ge=0, le=100, decimal_places=2)
+    sincerity_score: Optional[float] = Field(None, ge=0, le=100)
     raw_pdf_id: Optional[UUID] = None
 
 
@@ -417,7 +469,7 @@ class AssessmentWithDocumentResponse(AssessmentResponse):
 class AssessmentScoreBase(BaseSchema):
     """Base para scores de evaluación."""
     dimension: str = Field(..., min_length=1, max_length=100)
-    value: Decimal = Field(..., ge=0, le=100, decimal_places=2)
+    value: float = Field(..., ge=0, le=100)
     unit: str = Field(default="score", max_length=20)
     source_page: Optional[int] = None
 
@@ -448,7 +500,7 @@ class ApplicationScoresSummary(BaseSchema):
     """Resumen de scores para una aplicación."""
     application_id: UUID
     assessments: List[AssessmentWithScoresResponse]
-    overall_score: Optional[Decimal]
+    overall_score: Optional[float]
 
 
 # =============================================================================
@@ -521,7 +573,7 @@ class TernaCandidateComparison(BaseSchema):
     """Comparación de candidato para terna."""
     candidate_id: UUID
     full_name: str
-    overall_score: Optional[Decimal]
+    overall_score: Optional[float]
     stage: str
     assessments_summary: Dict[str, Any]
     flags_summary: Dict[str, Any]
@@ -541,7 +593,7 @@ class RoleAnalyticsMetrics(BaseSchema):
     by_stage: Dict[str, int]
     hired_count: int
     rejected_count: int
-    avg_overall_score: Optional[Decimal]
+    avg_overall_score: Optional[float]
     avg_time_to_hire_days: Optional[int]  # Promedio de días desde sourcing a hired
 
 
@@ -560,7 +612,7 @@ class CandidateHistoryApplication(BaseSchema):
     stage: str
     hired: bool
     decision_date: Optional[date]
-    overall_score: Optional[Decimal]
+    overall_score: Optional[float]
     created_at: datetime
 
 

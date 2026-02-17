@@ -1,5 +1,5 @@
 """
-Core ATS API - Documents Router
+Core ATS API - HHDocuments Router
 Endpoints para gestión de documentos/evidencia RAW.
 """
 from typing import Optional
@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.core.config import settings
-from app.models.core_ats import Document, Application, Role, Candidate
+from app.models.core_ats import HHDocument, HHApplication, HHRole, HHCandidate
 from app.schemas.core_ats import DocumentResponse, DocumentUploadRequest
 
-router = APIRouter(prefix="/documents", tags=["Documents"])
+router = APIRouter(prefix="/documents", tags=["HHDocuments"])
 
 # Configuración de almacenamiento
 UPLOAD_DIR = Path(settings.UPLOAD_DIR) if hasattr(settings, 'UPLOAD_DIR') else Path("/tmp/uploads")
@@ -56,17 +56,17 @@ async def upload_document(
     
     # Validar que las entidades existan
     if application_id:
-        app = db.query(Application).filter(Application.application_id == application_id).first()
+        app = db.query(HHApplication).filter(HHApplication.application_id == application_id).first()
         if not app:
             raise HTTPException(status_code=404, detail="Aplicación no encontrada")
     
     if role_id:
-        role = db.query(Role).filter(Role.role_id == role_id).first()
+        role = db.query(HHRole).filter(HHRole.role_id == role_id).first()
         if not role:
             raise HTTPException(status_code=404, detail="Vacante no encontrada")
     
     if candidate_id:
-        candidate = db.query(Candidate).filter(Candidate.candidate_id == candidate_id).first()
+        candidate = db.query(HHCandidate).filter(HHCandidate.candidate_id == candidate_id).first()
         if not candidate:
             raise HTTPException(status_code=404, detail="Candidato no encontrado")
     
@@ -87,7 +87,7 @@ async def upload_document(
     sha256_hash = compute_sha256(file_path)
     
     # Crear registro en BD
-    db_document = Document(
+    db_document = HHDocument(
         application_id=UUID(application_id) if application_id else None,
         role_id=UUID(role_id) if role_id else None,
         candidate_id=UUID(candidate_id) if candidate_id else None,
@@ -112,9 +112,9 @@ def get_document(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener información de un documento."""
-    document = db.query(Document).filter(Document.document_id == document_id).first()
+    document = db.query(HHDocument).filter(HHDocument.document_id == document_id).first()
     if not document:
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
+        raise HTTPException(status_code=404, detail="HHDocumento no encontrado")
     return document
 
 
@@ -125,9 +125,9 @@ def download_document(
     current_user: dict = Depends(get_current_user)
 ):
     """Descargar un documento."""
-    document = db.query(Document).filter(Document.document_id == document_id).first()
+    document = db.query(HHDocument).filter(HHDocument.document_id == document_id).first()
     if not document:
-        raise HTTPException(status_code=404, detail="Documento no encontrado")
+        raise HTTPException(status_code=404, detail="HHDocumento no encontrado")
     
     file_path = Path(document.storage_uri)
     if not file_path.exists():

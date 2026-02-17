@@ -15,6 +15,7 @@ from app.models import (
     Evaluation,
     Configuration
 )
+from app.migrations.seed_templates import seed_message_templates
 
 
 async def seed_database():
@@ -35,6 +36,9 @@ async def seed_database():
             
             # 5. Crear configuraciones de ejemplo
             await _seed_configurations(session)
+            
+            # 6. Crear plantillas de mensajes por defecto
+            await seed_message_templates(session)
             
             await session.commit()
             print("✅ Seed data cargado exitosamente")

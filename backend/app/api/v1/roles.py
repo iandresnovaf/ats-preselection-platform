@@ -1,5 +1,5 @@
 """
-Core ATS API - Roles Router
+Core ATS API - HHRoles Router
 Endpoints para gestión de vacantes/roles.
 """
 from typing import List, Optional
@@ -10,7 +10,7 @@ from sqlalchemy import func
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.core_ats import Role, Client, Application, Candidate, Assessment, Flag, Interview
+from app.models.core_ats import HHRole, HHClient, HHApplication, HHCandidate, HHAssessment, HHFlag, HHInterview
 from app.schemas.core_ats import (
     RoleCreate, RoleUpdate, RoleResponse,
     RoleListResponse, RoleWithApplicationsResponse,
@@ -30,12 +30,12 @@ def create_role(
 ):
     """Crear una nueva vacante/rol."""
     # Verificar que el cliente existe
-    client = db.query(Client).filter(Client.client_id == role.client_id).first()
+    client = db.query(HHClient).filter(HHClient.client_id == role.client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     
     role_data = role.model_dump()
-    db_role = Role(**role_data)
+    db_role = HHRole(**role_data)
     db.add(db_role)
     db.commit()
     db.refresh(db_role)
@@ -54,16 +54,16 @@ def list_roles(
     current_user: dict = Depends(get_current_user)
 ):
     """Listar vacantes con filtros y paginación."""
-    query = db.query(Role)
+    query = db.query(HHRole)
     
     if status:
-        query = query.filter(Role.status == status)
+        query = query.filter(HHRole.status == status)
     if client_id:
-        query = query.filter(Role.client_id == client_id)
+        query = query.filter(HHRole.client_id == client_id)
     if location:
-        query = query.filter(Role.location.ilike(f"%{location}%"))
+        query = query.filter(HHRole.location.ilike(f"%{location}%"))
     if seniority:
-        query = query.filter(Role.seniority.ilike(f"%{seniority}%"))
+        query = query.filter(HHRole.seniority.ilike(f"%{seniority}%"))
     
     total = query.count()
     roles = query.offset((page - 1) * page_size).limit(page_size).all()
@@ -83,9 +83,9 @@ def get_role(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener una vacante por ID con información del cliente."""
-    role = db.query(Role).options(
-        joinedload(Role.client)
-    ).filter(Role.role_id == role_id).first()
+    role = db.query(HHRole).options(
+        joinedload(HHRole.client)
+    ).filter(HHRole.role_id == role_id).first()
     
     if not role:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
@@ -101,7 +101,7 @@ def update_role(
     current_user: dict = Depends(get_current_user)
 ):
     """Actualizar una vacante."""
-    db_role = db.query(Role).filter(Role.role_id == role_id).first()
+    db_role = db.query(HHRole).filter(HHRole.role_id == role_id).first()
     if not db_role:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
     
@@ -127,20 +127,20 @@ def get_role_applications(
     current_user: dict = Depends(get_current_user)
 ):
     """Obtener vacante con todas sus aplicaciones."""
-    role = db.query(Role).options(
-        joinedload(Role.client)
-    ).filter(Role.role_id == role_id).first()
+    role = db.query(HHRole).options(
+        joinedload(HHRole.client)
+    ).filter(HHRole.role_id == role_id).first()
     
     if not role:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
     
     # Construir query de aplicaciones
-    apps_query = db.query(Application).options(
-        joinedload(Application.candidate)
-    ).filter(Application.role_id == role_id)
+    apps_query = db.query(HHApplication).options(
+        joinedload(HHApplication.candidate)
+    ).filter(HHApplication.role_id == role_id)
     
     if stage:
-        apps_query = apps_query.filter(Application.stage == stage)
+        apps_query = apps_query.filter(HHApplication.stage == stage)
     
     applications = apps_query.all()
     
@@ -178,28 +178,28 @@ def get_role_terna(
     Comparador de terna - Obtener comparación de candidatos para una vacante.
     Si no se especifican candidate_ids, retorna los top candidatos en etapa 'terna'.
     """
-    role = db.query(Role).options(
-        joinedload(Role.client)
-    ).filter(Role.role_id == role_id).first()
+    role = db.query(HHRole).options(
+        joinedload(HHRole.client)
+    ).filter(HHRole.role_id == role_id).first()
     
     if not role:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
     
     # Query de aplicaciones
-    apps_query = db.query(Application).options(
-        joinedload(Application.candidate),
-        joinedload(Application.assessments).joinedload(Assessment.scores),
-        joinedload(Application.flags),
-        joinedload(Application.interviews)
-    ).filter(Application.role_id == role_id)
+    apps_query = db.query(HHApplication).options(
+        joinedload(HHApplication.candidate),
+        joinedload(HHApplication.assessments).joinedload(HHAssessment.scores),
+        joinedload(HHApplication.flags),
+        joinedload(HHApplication.interviews)
+    ).filter(HHApplication.role_id == role_id)
     
     if candidate_ids:
-        apps_query = apps_query.filter(Application.candidate_id.in_(candidate_ids))
+        apps_query = apps_query.filter(HHApplication.candidate_id.in_(candidate_ids))
     else:
         # Por defecto, candidatos en etapa terna o con mejor score
         apps_query = apps_query.filter(
-            Application.stage.in_(['terna', 'interview', 'offer'])
-        ).order_by(Application.overall_score.desc().nullslast())
+            HHApplication.stage.in_(['terna', 'interview', 'offer'])
+        ).order_by(HHApplication.overall_score.desc().nullslast())
     
     applications = apps_query.limit(5).all()
     
