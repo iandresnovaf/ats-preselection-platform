@@ -141,7 +141,8 @@ class LegacyCommunication(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     
     candidate_id = Column(UUID(as_uuid=True), ForeignKey("candidates.id"))
-    candidate = relationship("Candidate", back_populates="communications")
+    # NOTA: Relación removida - usar nuevo sistema de comunicaciones
+    # candidate = relationship("Candidate", back_populates="communications")
     
     type = Column(SQLEnum(LegacyCommunicationType))
     status = Column(SQLEnum(LegacyCommunicationStatus), default=LegacyCommunicationStatus.PENDING)

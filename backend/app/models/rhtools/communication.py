@@ -36,8 +36,8 @@ class MessageDirection(str, Enum):
     INBOUND = "inbound"    # Candidato -> Sistema
 
 
-class MessageTemplate(Base):
-    """Template de mensajes para comunicaciones."""
+class RHtoolsMessageTemplate(Base):
+    """Template de mensajes para comunicaciones (RHtools legacy)."""
     __tablename__ = "rhtools_message_templates"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -83,7 +83,7 @@ class StageMessageRule(Base):
     
     # Template a usar
     template_id = Column(UUID(as_uuid=True), ForeignKey("rhtools_message_templates.id"), nullable=False)
-    template = relationship("MessageTemplate", back_populates="stage_rules")
+    template = relationship("RHtoolsMessageTemplate", back_populates="stage_rules")
     
     # Condiciones
     trigger_event = Column(String(50), default="stage_enter")  # stage_enter, stage_exit, etc

@@ -2,9 +2,11 @@
 Core ATS API - HHRoles Router
 Endpoints para gestión de vacantes/roles.
 """
+import tempfile
+import os
 from typing import List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, File, UploadFile
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 
@@ -18,6 +20,7 @@ from app.schemas.core_ats import (
     TernaCandidateComparison, TernaReportResponse,
     ClientResponse
 )
+from app.services.job_profile_extractor import JobProfileExtractor
 
 router = APIRouter(prefix="/roles", tags=["Roles"])
 
@@ -236,3 +239,57 @@ def get_role_terna(
         role_title=role.role_title,
         candidates=candidates_comparison
     )
+
+
+@router.post("/extract-from-document")
+async def extract_role_from_document(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Extraer información de perfil de cargo desde PDF/Word.
+    
+    Soporta formatos: PDF, DOCX, DOC, TXT
+    
+    Returns:
+        Dict con los datos estructurados extraídos del documento
+    """
+    # Validar formato del archivo
+    allowed_extensions = {'.pdf', '.docx', '.doc', '.txt'}
+    file_ext = os.path.splitext(file.filename.lower())[1]
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Formato no soportado: {file_ext}. Use: PDF, DOCX, DOC, TXT"
+        )
+    
+    # Crear archivo temporal
+    temp_file = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        # Extraer información
+        extractor = JobProfileExtractor()
+        extracted_data = extractor.extract_from_document(temp_path)
+        
+        return {
+            "success": True,
+            "filename": file.filename,
+            "data": extracted_data
+        }
+        
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error procesando documento: {str(e)}")
+    finally:
+        # Limpiar archivo temporal
+        if temp_file and os.path.exists(temp_file.name):
+            os.unlink(temp_file.name)

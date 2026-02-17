@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from fastapi.responses import PlainTextResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_async_session
+from app.core.database import get_db
 from app.core.config import settings
 from app.services.whatsapp_service import WhatsAppService, get_whatsapp_service
 from app.services.communication_service import CommunicationService
@@ -55,7 +55,7 @@ async def verify_webhook(
 @router.post("")
 async def receive_message(
     request: Request,
-    db: AsyncSession = Depends(get_async_session)
+    db: AsyncSession = Depends(get_db)
 ):
     """Recibe mensajes y actualizaciones de estado de WhatsApp.
     

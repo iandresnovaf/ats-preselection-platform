@@ -73,6 +73,6 @@ class Candidate(Base):
     # Relations
     evaluations = relationship("Evaluation", back_populates="candidate")
     decisions = relationship("CandidateDecision", back_populates="candidate")
-    communications = relationship("Communication", back_populates="candidate")
+    # communications = relationship("Communication", back_populates="candidate")  # Usar nuevo sistema HHCandidate
     documents = relationship("Document", back_populates="candidate")
     match_results = relationship("MatchResult", back_populates="candidate", cascade="all, delete-orphan")

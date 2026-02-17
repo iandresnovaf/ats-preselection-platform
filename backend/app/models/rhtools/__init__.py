@@ -16,7 +16,7 @@ from app.models.rhtools.document import (
     DocumentStatus,
 )
 from app.models.rhtools.communication import (
-    MessageTemplate,
+    RHtoolsMessageTemplate,
     StageMessageRule,
     Message,
 )
@@ -37,7 +37,7 @@ __all__ = [
     "DocumentTextExtraction",
     "DocumentType",
     "DocumentStatus",
-    "MessageTemplate",
+    "RHtoolsMessageTemplate",
     "StageMessageRule",
     "Message",
     "CandidateOfflimits",
