@@ -1,0 +1,303 @@
+ ```yaml                                                                                                                        
+   # GitHub Actions CI/CD Pipeline completo para ATS Platform                                                                   
+                                                                                                                                
+   name: CI/CD Pipeline                                                                                                         
+                                                                                                                                
+   on:                                                                                                                          
+     push:                                                                                                                      
+       branches: [ main, develop ]                                                                                              
+     pull_request:                                                                                                              
+       branches: [ main, develop ]                                                                                              
+     schedule:                                                                                                                  
+       # Ejecutar análisis de seguridad diario a las 2 AM UTC                                                                   
+       - cron: '0 2 * * *'                                                                                                      
+                                                                                                                                
+   env:                                                                                                                         
+     PYTHON_VERSION: '3.11'                                                                                                     
+     NODE_VERSION: '20'                                                                                                         
+     POSTGRES_VERSION: '15'                                                                                                     
+     REDIS_VERSION: '7'                                                                                                         
+                                                                                                                                
+   jobs:                                                                                                                        
+     # ==========================================                                                                               
+     # JOB: Análisis de Seguridad (SAST + SCA)                                                                                  
+     # ==========================================                                                                               
+     security-scan:                                                                                                             
+       name: 🔒 Security Scan                                                                                                   
+       runs-on: ubuntu-latest                                                                                                   
+       permissions:                                                                                                             
+         actions: read                                                                                                          
+         contents: read                                                                                                         
+         security-events: write                                                                                                 
+                                                                                                                                
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: ${{ env.PYTHON_VERSION }}                                                                          
+                                                                                                                                
+         - name: Install security tools                                                                                         
+           run: pip install bandit[toml] safety pip-audit                                                                       
+                                                                                                                                
+         - name: Run Bandit (SAST)                                                                                              
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             bandit -r app -c pyproject.toml -f json -o reports/bandit-report.json || true                                      
+             bandit -r app -c pyproject.toml -f screen                                                                          
+                                                                                                                                
+         - name: Run Safety (SCA)                                                                                               
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             safety check -r requirements.txt --json --output reports/safety-report.json || true                                
+             safety check -r requirements.txt                                                                                   
+                                                                                                                                
+         - name: Run pip-audit                                                                                                  
+           working-directory: backend                                                                                           
+           run: pip-audit -r requirements.txt --format=json --output=reports/pip-audit-report.json || true                      
+                                                                                                                                
+         - uses: actions/setup-node@v4                                                                                          
+           with:                                                                                                                
+             node-version: ${{ env.NODE_VERSION }}                                                                              
+                                                                                                                                
+         - working-directory: frontend                                                                                          
+           run: |                                                                                                               
+             npm ci                                                                                                             
+             npm audit --audit-level=moderate || true                                                                           
+                                                                                                                                
+         - uses: github/codeql-action/init@v3                                                                                   
+           with:                                                                                                                
+             languages: python, javascript                                                                                      
+             queries: security-extended,security-and-quality                                                                    
+                                                                                                                                
+         - uses: github/codeql-action/autobuild@v3                                                                              
+         - uses: github/codeql-action/analyze@v3                                                                                
+                                                                                                                                
+         - uses: actions/upload-artifact@v4                                                                                     
+           if: always()                                                                                                         
+           with:                                                                                                                
+             name: security-reports                                                                                             
+             path: reports/                                                                                                     
+                                                                                                                                
+     # ==========================================                                                                               
+     # JOB: Tests Backend                                                                                                       
+     # ==========================================                                                                               
+     test-backend:                                                                                                              
+       name: 🧪 Backend Tests                                                                                                   
+       runs-on: ubuntu-latest                                                                                                   
+       services:                                                                                                                
+         postgres:                                                                                                              
+           image: postgres:${{ env.POSTGRES_VERSION }}                                                                          
+           env:                                                                                                                 
+             POSTGRES_USER: postgres                                                                                            
+             POSTGRES_PASSWORD: postgres                                                                                        
+             POSTGRES_DB: ats_test                                                                                              
+           options: >-                                                                                                          
+             --health-cmd pg_isready                                                                                            
+             --health-interval 10s                                                                                              
+             --health-timeout 5s                                                                                                
+             --health-retries 5                                                                                                 
+           ports:                                                                                                               
+             - 5432:5432                                                                                                        
+         redis:                                                                                                                 
+           image: redis:${{ env.REDIS_VERSION }}                                                                                
+           options: >-                                                                                                          
+             --health-cmd "redis-cli ping"                                                                                      
+             --health-interval 10s                                                                                              
+             --health-timeout 5s                                                                                                
+             --health-retries 5                                                                                                 
+           ports:                                                                                                               
+             - 6379:6379                                                                                                        
+                                                                                                                                
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: ${{ env.PYTHON_VERSION }}                                                                          
+                                                                                                                                
+         - working-directory: backend                                                                                           
+           run: |                                                                                                               
+             pip install -r requirements.txt                                                                                    
+             flake8 app tests --count --select=E9,F63,F7,F82 --show-source --statistics                                         
+             black --check app tests || true                                                                                    
+             isort --check-only app tests || true                                                                               
+             mypy app || true                                                                                                   
+             pytest tests/ -v --cov=app --cov-report=xml --cov-report=html --cov-fail-under=80 -m "not slow"                    
+           env:                                                                                                                 
+             DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ats_test                                       
+             REDIS_URL: redis://localhost:6379/0                                                                                
+             SECRET_KEY: test-secret-key-for-ci-only                                                                            
+             ENVIRONMENT: test                                                                                                  
+                                                                                                                                
+         - uses: actions/upload-artifact@v4                                                                                     
+           with:                                                                                                                
+             name: backend-coverage                                                                                             
+             path: backend/htmlcov/                                                                                             
+                                                                                                                                
+         - uses: codecov/codecov-action@v3                                                                                      
+           with:                                                                                                                
+             files: backend/coverage.xml                                                                                        
+             flags: backend                                                                                                     
+             name: backend-coverage                                                                                             
+                                                                                                                                
+     # ==========================================                                                                               
+     # JOB: Tests Frontend                                                                                                      
+     # ==========================================                                                                               
+     test-frontend:                                                                                                             
+       name: 🎨 Frontend Tests                                                                                                  
+       runs-on: ubuntu-latest                                                                                                   
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-node@v4                                                                                          
+           with:                                                                                                                
+             node-version: ${{ env.NODE_VERSION }}                                                                              
+             cache: 'npm'                                                                                                       
+             cache-dependency-path: frontend/package-lock.json                                                                  
+                                                                                                                                
+         - working-directory: frontend                                                                                          
+           run: |                                                                                                               
+             npm ci                                                                                                             
+             npm run lint || true                                                                                               
+             npm run type-check || true                                                                                         
+             npm test -- --coverage --coverageThreshold=60                                                                      
+                                                                                                                                
+         - uses: actions/upload-artifact@v4                                                                                     
+           with:                                                                                                                
+             name: frontend-coverage                                                                                            
+             path: frontend/coverage/                                                                                           
+                                                                                                                                
+     # ==========================================                                                                               
+     # JOB: Build y Push Docker                                                                                                 
+     # ==========================================                                                                               
+     build-docker:                                                                                                              
+       name: 🐳 Build Docker Images                                                                                             
+       runs-on: ubuntu-latest                                                                                                   
+       needs: [security-scan, test-backend, test-frontend]                                                                      
+       if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')               
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: docker/setup-buildx-action@v3                                                                                  
+                                                                                                                                
+         - uses: docker/login-action@v3                                                                                         
+           with:                                                                                                                
+             registry: ghcr.io                                                                                                  
+             username: ${{ github.actor }}                                                                                      
+             password: ${{ secrets.GITHUB_TOKEN }}                                                                              
+                                                                                                                                
+         - uses: docker/metadata-action@v5                                                                                      
+           id: meta                                                                                                             
+           with:                                                                                                                
+             images: ghcr.io/${{ github.repository }}                                                                           
+             tags: |                                                                                                            
+               type=ref,event=branch                                                                                            
+               type=sha,prefix={{branch}}-                                                                                      
+               type=raw,value=latest,enable={{is_default_branch}}                                                               
+                                                                                                                                
+         - name: Build and push backend                                                                                         
+           uses: docker/build-push-action@v5                                                                                    
+           with:                                                                                                                
+             context: ./backend                                                                                                 
+             push: true                                                                                                         
+             tags: ghcr.io/${{ github.repository }}/backend:${{ github.sha }}                                                   
+                                                                                                                                
+         - name: Build and push frontend                                                                                        
+           uses: docker/build-push-action@v5                                                                                    
+           with:                                                                                                                
+             context: ./frontend                                                                                                
+             push: true                                                                                                         
+             tags: ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}                                                  
+                                                                                                                                
+     # ==========================================                                                                               
+     # JOB: Load Testing                                                                                                        
+     # ==========================================                                                                               
+     load-test:                                                                                                                 
+       name: ⚡ Load Tests                                                                                                      
+       runs-on: ubuntu-latest                                                                                                   
+       needs: build-docker                                                                                                      
+       if: github.ref == 'refs/heads/main'                                                                                      
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: ${{ env.PYTHON_VERSION }}                                                                          
+                                                                                                                                
+         - run: pip install locust                                                                                              
+                                                                                                                                
+         - name: Start application                                                                                              
+           run: |                                                                                                               
+             docker-compose up -d                                                                                               
+             sleep 30                                                                                                           
+                                                                                                                                
+         - name: Run smoke load test                                                                                            
+           run: |                                                                                                               
+             python tests/run_load_tests.py smoke_load \                                                                        
+               --host http://localhost:8000 \                                                                                   
+               --report-dir reports/                                                                                            
+                                                                                                                                
+         - uses: actions/upload-artifact@v4                                                                                     
+           if: always()                                                                                                         
+           with:                                                                                                                
+             name: load-test-results                                                                                            
+             path: reports/                                                                                                     
+                                                                                                                                
+         - name: Stop application                                                                                               
+           if: always()                                                                                                         
+           run: docker-compose down                                                                                             
+                                                                                                                                
+     # ==========================================                                                                               
+     # JOB: DAST (OWASP ZAP)                                                                                                    
+     # ==========================================                                                                               
+     dast-scan:                                                                                                                 
+       name: 🔍 DAST Scan                                                                                                       
+       runs-on: ubuntu-latest                                                                                                   
+       needs: build-docker                                                                                                      
+       if: github.ref == 'refs/heads/main'                                                                                      
+       permissions:                                                                                                             
+         issues: write                                                                                                          
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - name: Start application                                                                                              
+           run: |                                                                                                               
+             docker-compose up -d                                                                                               
+             sleep 30                                                                                                           
+                                                                                                                                
+         - uses: zaproxy/action-baseline@v0.12.0                                                                                
+           with:                                                                                                                
+             target: 'http://localhost:8000'                                                                                    
+             rules_file_name: '.zap/rules.tsv'                                                                                  
+             cmd_options: '-a'                                                                                                  
+             issue_title: 'ZAP Baseline Scan Results'                                                                           
+                                                                                                                                
+         - uses: actions/upload-artifact@v4                                                                                     
+           if: always()                                                                                                         
+           with:                                                                                                                
+             name: zap-report                                                                                                   
+             path: report_*                                                                                                     
+                                                                                                                                
+         - name: Stop application                                                                                               
+           if: always()                                                                                                         
+           run: docker-compose down                                                                                             
+                                                                                                                                
+     # ==========================================                                                                               
+     # JOB: Notificación                                                                                                        
+     # ==========================================                                                                               
+     notify:                                                                                                                    
+       name: 📢 Notify                                                                                                          
+       runs-on: ubuntu-latest                                                                                                   
+       needs: [security-scan, test-backend, test-frontend, build-docker]                                                        
+       if: always() && github.ref == 'refs/heads/main'                                                                          
+       steps:                                                                                                                   
+         - name: Notify success                                                                                                 
+           if: needs.security-scan.result == 'success' && needs.test-backend.result == 'success' && needs.test-frontend.result  
+ == 'success'                                                                                                                   
+           run: echo "✅ CI/CD Pipeline completed successfully!"                                                                
+                                                                                                                                
+         - name: Notify failure                                                                                                 
+           if: failure()                                                                                                        
+           run: echo "❌ CI/CD Pipeline failed!"                                                                                
+ ```
