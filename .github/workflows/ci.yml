@@ -1,0 +1,186 @@
+```yaml                                                                                                                        
+   name: CI - Build & Test                                                                                                      
+                                                                                                                                
+   on:                                                                                                                          
+     push:                                                                                                                      
+       branches: [ main, develop ]                                                                                              
+       paths-ignore:                                                                                                            
+         - '**.md'                                                                                                              
+         - 'docs/**'                                                                                                            
+         - '.github/**'                                                                                                         
+     pull_request:                                                                                                              
+       branches: [ main, develop ]                                                                                              
+       paths-ignore:                                                                                                            
+         - '**.md'                                                                                                              
+         - 'docs/**'                                                                                                            
+                                                                                                                                
+   env:                                                                                                                         
+     PYTHON_VERSION: '3.11'                                                                                                     
+     NODE_VERSION: '20'                                                                                                         
+     POSTGRES_VERSION: '15'                                                                                                     
+     REDIS_VERSION: '7'                                                                                                         
+                                                                                                                                
+   concurrency:                                                                                                                 
+     group: ${{ github.workflow }}-${{ github.ref }}                                                                            
+     cancel-in-progress: true                                                                                                   
+                                                                                                                                
+   jobs:                                                                                                                        
+     lint:                                                                                                                      
+       name: 🔍 Lint & Format                                                                                                   
+       runs-on: ubuntu-latest                                                                                                   
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: ${{ env.PYTHON_VERSION }}                                                                          
+         - working-directory: backend                                                                                           
+           run: |                                                                                                               
+             pip install ruff black isort mypy                                                                                  
+             ruff check app --output-format=github                                                                              
+             black --check --diff app                                                                                           
+             isort --check-only --diff app                                                                                      
+             mypy app --ignore-missing-imports || true                                                                          
+         - uses: actions/setup-node@v4                                                                                          
+           with:                                                                                                                
+             node-version: ${{ env.NODE_VERSION }}                                                                              
+             cache: 'npm'                                                                                                       
+             cache-dependency-path: frontend/package-lock.json                                                                  
+         - working-directory: frontend                                                                                          
+           run: |                                                                                                               
+             npm ci                                                                                                             
+             npm run lint || true                                                                                               
+             npm run type-check || true                                                                                         
+                                                                                                                                
+     security:                                                                                                                  
+       name: 🔒 Security Scan                                                                                                   
+       runs-on: ubuntu-latest                                                                                                   
+       permissions:                                                                                                             
+         actions: read                                                                                                          
+         contents: read                                                                                                         
+         security-events: write                                                                                                 
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: ${{ env.PYTHON_VERSION }}                                                                          
+         - run: pip install bandit[toml] safety pip-audit                                                                       
+         - working-directory: backend                                                                                           
+           run: |                                                                                                               
+             bandit -r app -f json -o bandit-report.json || true                                                                
+             bandit -r app -f screen --exit-zero                                                                                
+             safety check -r requirements.txt --json --output safety-report.json || true                                        
+             pip-audit -r requirements.txt --format=json --output=pip-audit-report.json || true                                 
+         - uses: actions/upload-artifact@v4                                                                                     
+           with:                                                                                                                
+             name: security-reports                                                                                             
+             path: backend/*-report.json                                                                                        
+         - uses: actions/setup-node@v4                                                                                          
+           with:                                                                                                                
+             node-version: ${{ env.NODE_VERSION }}                                                                              
+         - working-directory: frontend                                                                                          
+           run: |                                                                                                               
+             npm ci                                                                                                             
+             npm audit --audit-level=moderate || true                                                                           
+         - uses: github/codeql-action/init@v3                                                                                   
+           with:                                                                                                                
+             languages: python, javascript                                                                                      
+         - uses: github/codeql-action/autobuild@v3                                                                              
+         - uses: github/codeql-action/analyze@v3                                                                                
+                                                                                                                                
+     test-backend:                                                                                                              
+       name: 🧪 Backend Tests                                                                                                   
+       runs-on: ubuntu-latest                                                                                                   
+       needs: [lint]                                                                                                            
+       services:                                                                                                                
+         postgres:                                                                                                              
+           image: postgres:${{ env.POSTGRES_VERSION }}                                                                          
+           env:                                                                                                                 
+             POSTGRES_USER: postgres                                                                                            
+             POSTGRES_PASSWORD: postgres                                                                                        
+             POSTGRES_DB: ats_test                                                                                              
+           options: >-                                                                                                          
+             --health-cmd pg_isready                                                                                            
+             --health-interval 10s                                                                                              
+             --health-timeout 5s                                                                                                
+             --health-retries 5                                                                                                 
+           ports:                                                                                                               
+             - 5432:5432                                                                                                        
+         redis:                                                                                                                 
+           image: redis:${{ env.REDIS_VERSION }}                                                                                
+           options: >-                                                                                                          
+             --health-cmd "redis-cli ping"                                                                                      
+             --health-interval 10s                                                                                              
+             --health-timeout 5s                                                                                                
+             --health-retries 5                                                                                                 
+           ports:                                                                                                               
+             - 6379:6379                                                                                                        
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: ${{ env.PYTHON_VERSION }}                                                                          
+         - working-directory: backend                                                                                           
+           run: |                                                                                                               
+             pip install -r requirements.txt                                                                                    
+             pytest tests/ -v --cov=app --cov-report=xml --cov-fail-under=70 -m "not slow"                                      
+           env:                                                                                                                 
+             DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ats_test                                       
+             REDIS_URL: redis://localhost:6379/0                                                                                
+             SECRET_KEY: test-secret-key-for-ci-only                                                                            
+             ENVIRONMENT: test                                                                                                  
+         - uses: codecov/codecov-action@v4                                                                                      
+           with:                                                                                                                
+             files: backend/coverage.xml                                                                                        
+             fail_ci_if_error: false                                                                                            
+                                                                                                                                
+     test-frontend:                                                                                                             
+       name: 🎨 Frontend Tests                                                                                                  
+       runs-on: ubuntu-latest                                                                                                   
+       needs: [lint]                                                                                                            
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+         - uses: actions/setup-node@v4                                                                                          
+           with:                                                                                                                
+             node-version: ${{ env.NODE_VERSION }}                                                                              
+             cache: 'npm'                                                                                                       
+             cache-dependency-path: frontend/package-lock.json                                                                  
+         - working-directory: frontend                                                                                          
+           run: |                                                                                                               
+             npm ci                                                                                                             
+             npm test -- --coverage --coverageThreshold=50 || true                                                              
+         - uses: actions/upload-artifact@v4                                                                                     
+           with:                                                                                                                
+             name: frontend-coverage                                                                                            
+             path: frontend/coverage/                                                                                           
+                                                                                                                                
+     build-docker:                                                                                                              
+       name: 🐳 Build Docker Images                                                                                             
+       runs-on: ubuntu-latest                                                                                                   
+       needs: [security, test-backend, test-frontend]                                                                           
+       if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'         
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+         - uses: docker/setup-buildx-action@v3                                                                                  
+         - uses: docker/build-push-action@v5                                                                                    
+           with:                                                                                                                
+             context: ./backend                                                                                                 
+             push: false                                                                                                        
+             tags: ats-platform/backend:${{ github.sha }}                                                                       
+         - uses: docker/build-push-action@v5                                                                                    
+           with:                                                                                                                
+             context: ./frontend                                                                                                
+             push: false                                                                                                        
+             tags: ats-platform/frontend:${{ github.sha }}                                                                      
+         - uses: aquasecurity/trivy-action@master                                                                               
+           with:                                                                                                                
+             image-ref: ats-platform/backend:${{ github.sha }}                                                                  
+             format: 'sarif'                                                                                                    
+             output: 'trivy-backend-results.sarif'                                                                              
+           continue-on-error: true                                                                                              
+         - uses: aquasecurity/trivy-action@master                                                                               
+           with:                                                                                                                
+             image-ref: ats-platform/frontend:${{ github.sha }}                                                                 
+             format: 'sarif'                                                                                                    
+             output: 'trivy-frontend-results.sarif'                                                                             
+           continue-on-error: true                                                                                              
+ ```
