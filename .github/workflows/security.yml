@@ -1,0 +1,146 @@
+ ```yaml                                                                                                                        
+   name: Security Checks                                                                                                        
+                                                                                                                                
+   on:                                                                                                                          
+     push:                                                                                                                      
+       branches: [main, develop]                                                                                                
+     pull_request:                                                                                                              
+       branches: [main, develop]                                                                                                
+     schedule:                                                                                                                  
+       # Ejecutar todos los días a las 2 AM UTC                                                                                 
+       - cron: '0 2 * * *'                                                                                                      
+                                                                                                                                
+   jobs:                                                                                                                        
+     # 1. Análisis Estático con Bandit                                                                                          
+     bandit:                                                                                                                    
+       name: Bandit Security Scan                                                                                               
+       runs-on: ubuntu-latest                                                                                                   
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: '3.12'                                                                                             
+                                                                                                                                
+         - name: Install Bandit                                                                                                 
+           run: pip install bandit[sarif]>=1.7.0                                                                                
+                                                                                                                                
+         - name: Run Bandit Scan                                                                                                
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             bandit -r app -f sarif -o bandit-results.sarif || true                                                             
+             bandit -r app -ll -ii 2>&1 | tee bandit-output.txt                                                                 
+           continue-on-error: true                                                                                              
+                                                                                                                                
+         - name: Check for Critical/High severity issues                                                                        
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             CRITICAL_COUNT=$(grep -c "SEVERITY:HIGH\|SEVERITY:CRITICAL" bandit-output.txt || true)                             
+             if [ "$CRITICAL_COUNT" -gt 0 ]; then                                                                               
+               echo "❌ CRITICAL/HIGH vulnerabilities found: $CRITICAL_COUNT"                                                   
+               cat bandit-output.txt                                                                                            
+               exit 1                                                                                                           
+             fi                                                                                                                 
+             echo "✅ No critical/high severity issues found"                                                                   
+                                                                                                                                
+         - name: Upload Bandit SARIF                                                                                            
+           uses: github/codeql-action/upload-sarif@v3                                                                           
+           if: always()                                                                                                         
+           with:                                                                                                                
+             sarif_file: backend/bandit-results.sarif                                                                           
+                                                                                                                                
+     # 2. Chequeo de Dependencias con Safety                                                                                    
+     safety:                                                                                                                    
+       name: Dependency Vulnerability Scan                                                                                      
+       runs-on: ubuntu-latest                                                                                                   
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: '3.12'                                                                                             
+                                                                                                                                
+         - name: Install Safety                                                                                                 
+           run: pip install safety>=3.0.0                                                                                       
+                                                                                                                                
+         - name: Run Safety Check                                                                                               
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             safety check --full-report --output text 2>&1 | tee safety-output.txt || true                                      
+             safety check --policy-file .safety-policy.yml || true                                                              
+           continue-on-error: true                                                                                              
+                                                                                                                                
+         - name: Fail on Critical Vulnerabilities                                                                               
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             if grep -i "critical\|cvss.*9\|cvss.*10" safety-output.txt > /dev/null 2>&1; then                                  
+               echo "❌ CRITICAL vulnerabilities found in dependencies"                                                         
+               exit 1                                                                                                           
+             fi                                                                                                                 
+             echo "✅ No critical vulnerabilities found"                                                                        
+                                                                                                                                
+     # 3. Detección de Secretos con TruffleHog                                                                                  
+     secrets-scan:                                                                                                              
+       name: Secret Detection                                                                                                   
+       runs-on: ubuntu-latest                                                                                                   
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+           with:                                                                                                                
+             fetch-depth: 0                                                                                                     
+                                                                                                                                
+         - uses: trufflesecurity/trufflehog@main                                                                                
+           with:                                                                                                                
+             path: ./                                                                                                           
+             base: main                                                                                                         
+             head: HEAD                                                                                                         
+             extra_args: --debug --only-verified                                                                                
+                                                                                                                                
+     # 4. Linting de Seguridad con flake8-security                                                                              
+     flake8-security:                                                                                                           
+       name: Flake8 Security Lint                                                                                               
+       runs-on: ubuntu-latest                                                                                                   
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: '3.12'                                                                                             
+                                                                                                                                
+         - name: Install flake8-security                                                                                        
+           run: pip install flake8>=7.0.0 flake8-bandit>=24.0.0                                                                 
+                                                                                                                                
+         - name: Run Flake8 Security Checks                                                                                     
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             flake8 app --select=S --max-line-length=120 2>&1 | tee flake8-output.txt || true                                   
+                                                                                                                                
+             if grep -E "^app/.*S[0-9]+" flake8-output.txt > /dev/null 2>&1; then                                               
+               echo "❌ Security issues found by flake8-bandit"                                                                 
+               exit 1                                                                                                           
+             fi                                                                                                                 
+             echo "✅ No security issues found by flake8"                                                                       
+                                                                                                                                
+     # 5. Verificación de requirements.txt                                                                                      
+     requirements-check:                                                                                                        
+       name: Requirements Security Check                                                                                        
+       runs-on: ubuntu-latest                                                                                                   
+       steps:                                                                                                                   
+         - uses: actions/checkout@v4                                                                                            
+                                                                                                                                
+         - uses: actions/setup-python@v5                                                                                        
+           with:                                                                                                                
+             python-version: '3.12'                                                                                             
+                                                                                                                                
+         - name: Check for known vulnerable packages                                                                            
+           working-directory: backend                                                                                           
+           run: |                                                                                                               
+             pip install pip-audit>=2.6.0                                                                                       
+             pip-audit --requirement requirements.txt --desc --format=json 2>&1 | tee audit-output.json || true                 
+                                                                                                                                
+             if grep -E '"cvss_v3_score":\s*([7-9]|10)\.' audit-output.json > /dev/null 2>&1; then                              
+               echo "❌ HIGH/CRITICAL vulnerabilities found by pip-audit"                                                       
+               cat audit-output.json                                                                                            
+               exit 1                                                                                                           
+             fi                                                                                                                 
+             echo "✅ No high/critical vulnerabilities found by pip-audit"                                                      
+ ```
