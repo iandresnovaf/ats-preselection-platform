@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str = "postgresql://user:pass@localhost/ats_db"
+    DATABASE_URL_MIGRATIONS: Optional[str] = None  # URL para migraciones (usuario con permisos DDL)
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -35,8 +36,12 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE: int = 10485760  # 10MB
     
     # Default Admin
+    # IMPORTANT: These should be set via environment variables in production
     DEFAULT_ADMIN_EMAIL: str = "admin@example.com"
-    DEFAULT_ADMIN_PASSWORD: str = "changeme"
+    DEFAULT_ADMIN_PASSWORD: str = Field(
+        default="",
+        description="Admin password - MUST be set via env var in production"
+    )
     
     # CORS - Orígenes permitidos (separados por coma)
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
@@ -87,7 +92,15 @@ class Settings(BaseSettings):
         """Valida que la contraseña de admin no sea la default en producción."""
         environment = values.get('ENVIRONMENT', 'development')
         if environment == 'production':
-            if v.lower() in ['changeme', 'password', 'admin', '123456', 'default']:
+            # En producción, la contraseña no puede estar vacía
+            if not v or v.strip() == '':
+                raise ValueError(
+                    "DEFAULT_ADMIN_PASSWORD debe estar configurado en producción. "
+                    "Use variable de entorno: export DEFAULT_ADMIN_PASSWORD='tu-password-segura'"
+                )
+            # Lista de contraseñas inseguras conocidas
+            weak_passwords = ['changeme', 'password', 'admin', '123456', 'default', '']
+            if v.lower() in weak_passwords:
                 raise ValueError(
                     "DEFAULT_ADMIN_PASSWORD no puede ser una contraseña débil en producción. "
                     "Cambie la contraseña por una segura antes de desplegar."

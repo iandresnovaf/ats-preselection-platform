@@ -8,7 +8,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers
 revision = '20260216_2055_detailed_application_stages'
-down_revision = '20260216_001_core_ats_data_model'
+down_revision = '20260216_003'
 branch_labels = None
 depends_on = None
 

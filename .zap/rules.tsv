@@ -1,0 +1,51 @@
+# OWASP ZAP Scan Rules Configuration
+# https://www.zaproxy.org/docs/alerts/
+
+# Desactivar reglas de bajo riesgo que generan ruido
+10036	IGNORE	(Hidden Directory Found)
+10038	IGNORE	(Content Security Policy)
+10052	IGNORE	(X-Powered-By Header)
+10054	IGNORE	(Cookie Without SameSite Attribute)
+10055	IGNORE	(CSP)
+10096	IGNORE	(Timestamp Disclosure)
+10105	IGNORE	(Weak Authentication Method)
+10109	IGNORE	(Modern Web Application)
+10202	IGNORE	(Absence of Anti-CSRF Tokens)
+
+# Reglas de riesgo medio a revisar manualmente
+40012	WARN	(Cross Domain Script Inclusion)
+40014	WARN	(Cross Domain Misconfiguration)
+40016	WARN	(Web Browser XSS Protection)
+40017	WARN	(Cross Domain JavaScript Source File)
+
+# Reglas críticas que deben fallar
+40018	FAIL	(SQL Injection)
+40019	FAIL	(SQL Injection - MySQL)
+40020	FAIL	(SQL Injection - Hypersonic SQL)
+40021	FAIL	(SQL Injection - Oracle)
+40022	FAIL	(SQL Injection - PostgreSQL)
+40024	FAIL	(SQL Injection - SQLite)
+40026	FAIL	(Cross Site Scripting (DOM Based))
+40027	FAIL	(Cross Site Scripting)
+40032	FAIL	(Directory Browsing)
+40043	FAIL	(Log4Shell)
+
+# Reglas de información
+10010	INFO	(Cookie No HttpOnly Flag)
+10011	INFO	(Cookie Without Secure Flag)
+10015	INFO	(Incomplete or No Cache-control)
+10017	INFO	(Cross-Domain JavaScript Source)
+10019	INFO	(Content-Type Header Missing)
+10020	INFO	(X-Frame-Options Header)
+10021	INFO	(X-Content-Type-Options Header)
+10023	INFO	(Information Disclosure)
+10027	INFO	(Information Suspicious Comments)
+10037	INFO	(Server Leaks Information)
+10049	INFO	(Non-Storable Content)
+10050	INFO	(Retrieved from Cache)
+10062	INFO	(PII Disclosure)
+10063	INFO	(Feature Policy Header Missing)
+10094	INFO	(Base64 Disclosure)
+10099	INFO	(Source Code Disclosure)
+10110	INFO	(User Controllable HTML Element)
+10111	INFO	(Authentication Request Identified)

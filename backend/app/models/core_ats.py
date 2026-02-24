@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import uuid
 
-from app.core.database import Base
+from app.core.database import Base, EncryptedType
 
 
 # =============================================================================
@@ -47,6 +47,7 @@ class ApplicationStage(str, Enum):
     NO_RESPONSE = "no_response"              # No respondió (48-72h)
     
     # Etapas de entrevista
+    INTERVIEW = "interview"                  # Entrevista (legacy/compatibility)
     INTERVIEW_SCHEDULED = "interview_scheduled"  # Entrevista agendada
     INTERVIEW_DONE = "interview_done"        # Entrevista realizada
     
@@ -98,6 +99,14 @@ class AuditAction(str, Enum):
     DELETE = "delete"
 
 
+class ScoringStatus(str, Enum):
+    """Estados del proceso de scoring con IA."""
+    PENDING = "pending"           # Pendiente de procesar
+    PROCESSING = "processing"     # En proceso
+    COMPLETED = "completed"       # Completado exitosamente
+    FAILED = "failed"             # Falló el procesamiento
+
+
 # =============================================================================
 # MODELO 1: HH_CANDIDATES (Candidatos Headhunting)
 # =============================================================================
@@ -106,6 +115,9 @@ class HHCandidate(Base):
     """
     Candidatos del sistema Headhunting.
     NOTA: Nunca guardar scores aquí. Los scores van en hh_assessment_scores.
+    
+    SEGURIDAD: Los campos PII (email, phone, national_id) están encriptados
+    usando Fernet (AES-128 en modo CBC con PKCS7 padding).
     """
     __tablename__ = "hh_candidates"
     
@@ -119,9 +131,12 @@ class HHCandidate(Base):
     
     candidate_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name = Column(Text, nullable=False)
-    national_id = Column(Text, nullable=True)
-    email = Column(Text, nullable=True)
-    phone = Column(Text, nullable=True)
+    # PII ENCRYPTED: Cédula/Nacional ID - cifrado en reposo
+    national_id = Column(EncryptedType, nullable=True)
+    # PII ENCRYPTED: Email - cifrado en reposo
+    email = Column(EncryptedType, nullable=True)
+    # PII ENCRYPTED: Teléfono - cifrado en reposo
+    phone = Column(EncryptedType, nullable=True)
     location = Column(Text, nullable=True)
     linkedin_url = Column(Text, nullable=True)
     
@@ -213,6 +228,7 @@ class HHApplication(Base):
         Index('idx_hh_applications_stage', 'stage'),
         Index('idx_hh_applications_hired', 'hired'),
         Index('idx_hh_applications_score', 'overall_score'),
+        Index('idx_hh_applications_scoring_status', 'scoring_status'),
         UniqueConstraint('candidate_id', 'role_id', name='uix_hh_applications_candidate_role'),
     )
     
@@ -224,6 +240,10 @@ class HHApplication(Base):
     decision_date = Column(Date, nullable=True)
     overall_score = Column(Numeric(5, 2), CheckConstraint('overall_score >= 0 AND overall_score <= 100'), nullable=True)
     notes = Column(Text, nullable=True)
+    
+    # Campos para el scoring con IA
+    scoring_status = Column(SQLEnum(ScoringStatus), default=ScoringStatus.PENDING, nullable=False)
+    scoring_error = Column(Text, nullable=True)  # Mensaje de error si falla el scoring
     
     # Campos para el nuevo flujo de contacto
     discard_reason = Column(Text, nullable=True)  # Razón de descarte por consultor
@@ -415,3 +435,246 @@ class HHAuditLog(Base):
     changed_by = Column(Text, nullable=True)
     changed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     diff_json = Column(JSONB, nullable=True)
+
+
+# =============================================================================
+# ENUMS PARA PROCESAMIENTO DE CVs
+# =============================================================================
+
+class ExtractionMethod(str, Enum):
+    """Métodos de extracción de texto de CVs."""
+    PDF_TEXT = "pdf_text"           # Extracción directa de texto PDF
+    OCR = "ocr"                     # Reconocimiento óptico de caracteres
+    AI_EXTRACTION = "ai_extraction" # Extracción usando LLM/IA
+    HYBRID = "hybrid"               # Combinación de métodos
+    MANUAL = "manual"               # Ingreso manual
+
+
+class ProcessingStatus(str, Enum):
+    """Estados del procesamiento de CVs."""
+    PENDING = "pending"             # Pendiente de procesar
+    PROCESSING = "processing"       # En proceso
+    COMPLETED = "completed"         # Completado exitosamente
+    FAILED = "failed"               # Falló el procesamiento
+    PARTIAL = "partial"             # Procesamiento parcial (algunos campos)
+
+
+class CVVersionStatus(str, Enum):
+    """Estado de una versión de CV."""
+    ACTIVE = "active"               # Versión actual en uso
+    ARCHIVED = "archived"           # Versión archivada
+    SUPERCEDED = "superceded"       # Reemplazada por versión más nueva
+
+
+# =============================================================================
+# MODELO 11: HH_CV_PROCESSING - Procesamiento de CVs
+# =============================================================================
+
+class HHCVProcessing(Base):
+    """
+    Registro del procesamiento de CVs.
+    Almacena el texto raw extraído, JSON estructurado y metadatos.
+    """
+    __tablename__ = "hh_cv_processing"
+    
+    __table_args__ = (
+        Index('idx_hh_cv_processing_candidate', 'candidate_id'),
+        Index('idx_hh_cv_processing_document', 'document_id'),
+        Index('idx_hh_cv_processing_status', 'processing_status'),
+        Index('idx_hh_cv_processing_method', 'extraction_method'),
+        Index('idx_hh_cv_processing_created', 'created_at'),
+        Index('idx_hh_cv_processing_score', 'confidence_score'),
+    )
+    
+    processing_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("hh_candidates.candidate_id"), nullable=False)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("hh_documents.document_id"), nullable=True)
+    
+    # Estado y método de procesamiento
+    processing_status = Column(SQLEnum(ProcessingStatus), default=ProcessingStatus.PENDING, nullable=False)
+    extraction_method = Column(SQLEnum(ExtractionMethod), nullable=True)
+    
+    # Contenido extraído
+    raw_text = Column(Text, nullable=True)              # Texto plano extraído del PDF
+    extracted_json = Column(JSONB, nullable=True)        # Datos estructurados extraídos
+    
+    # Metadatos de extracción
+    confidence_score = Column(Numeric(5, 2), CheckConstraint('confidence_score >= 0 AND confidence_score <= 100'), nullable=True)
+    extraction_duration_ms = Column(Integer, nullable=True)  # Tiempo de procesamiento en ms
+    pages_processed = Column(Integer, nullable=True)         # Número de páginas procesadas
+    file_size_bytes = Column(Integer, nullable=True)         # Tamaño del archivo en bytes
+    
+    # Campos específicos extraídos (denormalizados para búsquedas rápidas)
+    extracted_name = Column(Text, nullable=True)
+    extracted_email = Column(Text, nullable=True)
+    extracted_phone = Column(Text, nullable=True)
+    extracted_title = Column(Text, nullable=True)       # Cargo/título profesional
+    extracted_location = Column(Text, nullable=True)
+    years_experience = Column(Integer, nullable=True)   # Años de experiencia estimados
+    
+    # Metadata
+    processed_by = Column(Text, nullable=True)          # Usuario o sistema que procesó
+    processed_at = Column(DateTime, nullable=True)      # Fecha de procesamiento
+    error_message = Column(Text, nullable=True)         # Mensaje de error si falló
+    error_details = Column(JSONB, nullable=True)        # Detalles técnicos del error
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    candidate = relationship("HHCandidate", back_populates="cv_processings")
+    document = relationship("HHDocument", back_populates="cv_processing")
+    versions = relationship("HHCVVersion", back_populates="cv_processing", cascade="all, delete-orphan")
+    logs = relationship("HHCVProcessingLog", back_populates="cv_processing", cascade="all, delete-orphan")
+
+
+# =============================================================================
+# MODELO 12: HH_CV_VERSIONS - Histórico de versiones de CV
+# =============================================================================
+
+class HHCVVersion(Base):
+    """
+    Histórico de versiones de CV procesados.
+    Permite mantener trazabilidad de cambios en el CV de un candidato.
+    """
+    __tablename__ = "hh_cv_versions"
+    
+    __table_args__ = (
+        Index('idx_hh_cv_versions_processing', 'processing_id'),
+        Index('idx_hh_cv_versions_candidate', 'candidate_id'),
+        Index('idx_hh_cv_versions_status', 'version_status'),
+        Index('idx_hh_cv_versions_number', 'candidate_id', 'version_number'),
+        Index('idx_hh_cv_versions_created', 'created_at'),
+    )
+    
+    version_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    processing_id = Column(UUID(as_uuid=True), ForeignKey("hh_cv_processing.processing_id"), nullable=False)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("hh_candidates.candidate_id"), nullable=False)
+    
+    # Información de versión
+    version_number = Column(Integer, nullable=False)    # Número secuencial de versión (1, 2, 3...)
+    version_status = Column(SQLEnum(CVVersionStatus), default=CVVersionStatus.ACTIVE, nullable=False)
+    
+    # Referencias
+    previous_version_id = Column(UUID(as_uuid=True), ForeignKey("hh_cv_versions.version_id"), nullable=True)
+    
+    # Contenido de esta versión
+    version_raw_text = Column(Text, nullable=True)
+    version_extracted_json = Column(JSONB, nullable=True)
+    changes_summary = Column(Text, nullable=True)       # Resumen de cambios respecto a versión anterior
+    changes_json = Column(JSONB, nullable=True)         # Cambios estructurados (diff)
+    
+    # Metadata
+    created_by = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    archived_at = Column(DateTime, nullable=True)       # Fecha de archivado
+    archive_reason = Column(Text, nullable=True)        # Razón de archivado
+    
+    # Relationships
+    cv_processing = relationship("HHCVProcessing", back_populates="versions")
+    candidate = relationship("HHCandidate", back_populates="cv_versions")
+    previous_version = relationship("HHCVVersion", remote_side=[version_id], backref="next_versions")
+
+
+# =============================================================================
+# MODELO 13: HH_CV_PROCESSING_LOGS - Logs detallados de procesamiento
+# =============================================================================
+
+class HHCVProcessingLog(Base):
+    """
+    Logs detallados del proceso de extracción de CVs.
+    Útil para debugging y auditoría del pipeline de procesamiento.
+    """
+    __tablename__ = "hh_cv_processing_logs"
+    
+    __table_args__ = (
+        Index('idx_hh_cv_logs_processing', 'processing_id'),
+        Index('idx_hh_cv_logs_level', 'log_level'),
+        Index('idx_hh_cv_logs_stage', 'processing_stage'),
+        Index('idx_hh_cv_logs_created', 'created_at'),
+        Index('idx_hh_cv_logs_step', 'processing_id', 'step_order'),
+    )
+    
+    log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    processing_id = Column(UUID(as_uuid=True), ForeignKey("hh_cv_processing.processing_id"), nullable=False)
+    
+    # Información del log
+    log_level = Column(Text, nullable=False)            # DEBUG, INFO, WARNING, ERROR
+    processing_stage = Column(Text, nullable=False)     # Etapa: 'upload', 'extraction', 'parsing', 'validation'
+    step_order = Column(Integer, nullable=False)        # Orden secuencial del paso
+    
+    # Contenido
+    message = Column(Text, nullable=False)
+    details = Column(JSONB, nullable=True)              # Datos adicionales estructurados
+    
+    # Metadata de ejecución
+    duration_ms = Column(Integer, nullable=True)        # Duración de este paso
+    memory_mb = Column(Integer, nullable=True)          # Uso de memoria aproximado
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    cv_processing = relationship("HHCVProcessing", back_populates="logs")
+
+
+# =============================================================================
+# MODELO 14: HH_CV_EXTRACTIONS - Extracciones de CV por IA (Tabla simplificada)
+# =============================================================================
+
+class HHCVExtraction(Base):
+    """
+    Extracción de datos de CV procesados por IA.
+    Tabla simplificada para almacenar resultados de extracción de CVs.
+    Relacionada directamente con candidatos existentes.
+    """
+    __tablename__ = "hh_cv_extractions"
+
+    __table_args__ = (
+        Index('idx_hh_cv_extractions_candidate', 'candidate_id'),
+        Index('idx_hh_cv_extractions_method', 'extraction_method'),
+        Index('idx_hh_cv_extractions_score', 'confidence_score'),
+        Index('idx_hh_cv_extractions_file_hash', 'file_hash'),
+        Index('idx_hh_cv_extractions_created', 'created_at'),
+        Index('idx_hh_cv_extractions_filename', 'filename'),
+        UniqueConstraint('file_hash', name='uix_hh_cv_extractions_file_hash'),
+    )
+
+    extraction_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    candidate_id = Column(UUID(as_uuid=True), ForeignKey("hh_candidates.candidate_id"), nullable=False)
+
+    # Contenido extraído
+    raw_text = Column(Text, nullable=True)              # Texto completo del CV extraído
+    extracted_json = Column(JSONB, nullable=True)        # JSON con todos los datos estructurados
+
+    # Método y calidad de extracción
+    extraction_method = Column(SQLEnum(ExtractionMethod), nullable=True)  # pdf_text, ocr, ai_extraction
+    confidence_score = Column(Numeric(5, 2), CheckConstraint('confidence_score >= 0 AND confidence_score <= 100'), nullable=True)
+
+    # Información del archivo fuente
+    filename = Column(Text, nullable=False)              # Nombre del archivo procesado
+    file_hash = Column(Text, nullable=False)             # Hash SHA256 del archivo para unicidad
+
+    # Opcional: Referencia al documento si existe
+    document_id = Column(UUID(as_uuid=True), ForeignKey("hh_documents.document_id"), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    candidate = relationship("HHCandidate", back_populates="cv_extractions")
+    document = relationship("HHDocument", back_populates="cv_extraction", uselist=False)
+
+
+# =============================================================================
+# ACTUALIZAR RELACIONSHIPS EN MODELOS EXISTENTES
+# =============================================================================
+
+# Agregar a HHCandidate:
+HHCandidate.cv_processings = relationship("HHCVProcessing", back_populates="candidate", cascade="all, delete-orphan")
+HHCandidate.cv_versions = relationship("HHCVVersion", back_populates="candidate", cascade="all, delete-orphan")
+HHCandidate.cv_extractions = relationship("HHCVExtraction", back_populates="candidate", cascade="all, delete-orphan")
+
+# Agregar a HHDocument:
+HHDocument.cv_processing = relationship("HHCVProcessing", back_populates="document", uselist=False)
+HHDocument.cv_extraction = relationship("HHCVExtraction", back_populates="document", uselist=False)

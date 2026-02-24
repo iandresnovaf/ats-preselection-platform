@@ -32,11 +32,16 @@ class TimestampMixin(BaseSchema):
 class CandidateBase(BaseSchema):
     """Base para candidatos."""
     full_name: str = Field(..., min_length=1, max_length=500)
+    first_name: Optional[str] = Field(None, max_length=255)
+    last_name: Optional[str] = Field(None, max_length=255)
     national_id: Optional[str] = Field(None, max_length=100)
     email: Optional[str] = Field(None, max_length=255)
     phone: Optional[str] = Field(None, max_length=50)
     location: Optional[str] = Field(None, max_length=255)
     linkedin_url: Optional[str] = Field(None, max_length=500)
+    current_company: Optional[str] = Field(None, max_length=255)
+    current_position: Optional[str] = Field(None, max_length=255)
+    years_experience: Optional[int] = Field(None, ge=0, le=100)
 
 
 class CandidateCreate(CandidateBase):
@@ -154,6 +159,7 @@ class RoleResponse(RoleBase, TimestampMixin):
     role_id: UUID
     client_id: UUID
     role_description_doc_id: Optional[UUID] = None
+    client: Optional[ClientResponse] = None
 
 
 class RoleSummaryResponse(BaseSchema):
@@ -176,7 +182,7 @@ class RoleListResponse(BaseSchema):
 
 class RoleWithClientResponse(RoleResponse):
     """Rol con información del cliente."""
-    client: ClientResponse
+    client: Optional[ClientResponse] = None
 
 
 class RoleWithApplicationsResponse(RoleResponse):
@@ -221,7 +227,7 @@ class ApplicationBase(BaseSchema):
     """Base para aplicaciones."""
     stage: str = Field(
         default="sourcing",
-        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
+        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
     )
     hired: bool = False
     decision_date: Optional[date] = None
@@ -239,7 +245,7 @@ class ApplicationUpdate(BaseSchema):
     """Schema para actualizar aplicación."""
     stage: Optional[str] = Field(
         None,
-        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
+        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
     )
     hired: Optional[bool] = None
     decision_date: Optional[date] = None
@@ -251,7 +257,7 @@ class ApplicationStageUpdate(BaseSchema):
     """Schema específico para actualizar etapa."""
     stage: str = Field(
         ...,
-        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
+        pattern="^(sourcing|shortlist|terna|contact_pending|contacted|interested|not_interested|no_response|interview|interview_scheduled|interview_done|offer_sent|offer_accepted|offer_rejected|hired|discarded)$"
     )
     notes: Optional[str] = None
 
@@ -295,6 +301,8 @@ class ApplicationResponse(ApplicationBase, TimestampMixin):
     application_id: UUID
     candidate_id: UUID
     role_id: UUID
+    candidate: Optional[CandidateResponse] = None
+    role: Optional[RoleWithClientResponse] = None
 
 
 class ApplicationSummaryResponse(BaseSchema):

@@ -14,7 +14,7 @@ export default function EvaluationsDashboardPage() {
   const [selectedFilter, setSelectedFilter] = useState<string>("all");
 
   // Filter applications that have assessments
-  const applicationsWithAssessments = applications?.items?.filter(
+  const applicationsWithAssessments = applications?.filter(
     (app: any) => app.assessments_count > 0 || app.stage === "terna" || app.stage === "interview"
   ) || [];
 

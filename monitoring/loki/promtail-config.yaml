@@ -1,0 +1,99 @@
+# Configuración de Promtail para ATS Platform
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576
+    timeout: 10s
+
+scrape_configs:
+  # Logs del backend ATS
+  - job_name: ats-backend
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: ats-backend
+          service: ats-platform
+          __path__: /var/log/ats/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            message: message
+            timestamp: timestamp
+            trace_id: trace_id
+            user_id: user_id
+      - labels:
+          level:
+          trace_id:
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      - output:
+          source: message
+
+  # Logs de contenedores Docker
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            log: log
+            stream: stream
+            time: time
+      - timestamp:
+          source: time
+          format: RFC3339Nano
+      - output:
+          source: log
+      - labels:
+          stream:
+
+  # Logs del sistema
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system
+          __path__: /var/log/syslog
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\w+ \d+ \d+:\d+:\d+) (?P<host>\S+) (?P<service>\S+): (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: "Jan 02 15:04:05"
+      - output:
+          source: message
+      - labels:
+          host:
+          service:
+
+  # Logs de autenticación
+  - job_name: auth
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: auth
+          __path__: /var/log/auth.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\w+ \d+ \d+:\d+:\d+) (?P<host>\S+) (?P<service>\S+): (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: "Jan 02 15:04:05"
+      - output:
+          source: message

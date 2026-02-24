@@ -1,0 +1,239 @@
+# Configuración de Alertmanager para ATS Platform
+global:
+  # Tiempo de resolución de alertas
+  resolve_timeout: 5m
+  
+  # Configuración SMTP para emails
+  smtp_smarthost: '${SMTP_HOST:-smtp.gmail.com}:587'
+  smtp_from: '${SMTP_FROM:-alerts@ats-platform.com}'
+  smtp_auth_username: '${SMTP_USER:-}'
+  smtp_auth_password: '${SMTP_PASSWORD:-}'
+  smtp_require_tls: true
+  
+  # Slack API URL
+  slack_api_url: '${SLACK_WEBHOOK_URL:-}'
+  
+  # PagerDuty (opcional)
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+# Templates para notificaciones
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Rutas de enrutamiento de alertas
+route:
+  # Etiquetas para agrupar alertas
+  group_by: ['alertname', 'cluster', 'service']
+  
+  # Tiempo de espera para agrupar alertas
+  group_wait: 30s
+  
+  # Intervalo entre notificaciones del mismo grupo
+  group_interval: 5m
+  
+  # Intervalo para reenviar alertas resueltas
+  repeat_interval: 4h
+  
+  # Receiver por defecto
+  receiver: 'default'
+  
+  # Sub-rutas
+  routes:
+    # Alertas críticas -> PagerDuty + Slack + Email
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 10s
+      repeat_interval: 1h
+      continue: true
+    
+    # Alertas de seguridad -> Security team
+    - match:
+        team: security
+      receiver: 'security-team'
+      group_wait: 10s
+      repeat_interval: 30m
+      continue: true
+    
+    # Alertas de base de datos -> DBAs
+    - match:
+        service: database
+      receiver: 'database-team'
+      group_wait: 30s
+      repeat_interval: 2h
+    
+    # Alertas de sistema -> Infrastructure
+    - match:
+        service: system
+      receiver: 'infrastructure-team'
+      group_wait: 30s
+      repeat_interval: 2h
+    
+    # Alertas de warnings -> Slack only
+    - match:
+        severity: warning
+      receiver: 'slack-warnings'
+      group_wait: 1m
+      repeat_interval: 4h
+
+# Receptores de notificaciones
+receivers:
+  # Receiver por defecto (Slack)
+  - name: 'default'
+    slack_configs:
+      - channel: '#alerts-ats'
+        send_resolved: true
+        title: '📊 {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Estado:* {{ .Status }}
+          *Severidad:* {{ .Labels.severity }}
+          *Servicio:* {{ .Labels.service }}
+          *Instancia:* {{ .Labels.instance }}
+          
+          *Resumen:* {{ .Annotations.summary }}
+          *Descripción:* {{ .Annotations.description }}
+          
+          {{ if .Annotations.runbook_url }}*Runbook:* {{ .Annotations.runbook_url }}{{ end }}
+          ---
+          {{ end }}
+
+  # Alertas críticas (múltiples canales)
+  - name: 'critical-alerts'
+    # PagerDuty (si está configurado)
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY:-}'
+        description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        severity: '{{ .CommonLabels.severity }}'
+    # Slack
+    slack_configs:
+      - channel: '#alerts-critical'
+        send_resolved: true
+        title: '🚨 CRÍTICO: {{ .GroupLabels.alertname }}'
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        text: |
+          <!channel> {{ range .Alerts }}
+          *🔥 ESTADO: {{ .Status | toUpper }}*
+          *Severidad:* {{ .Labels.severity }}
+          *Servicio:* {{ .Labels.service }}
+          *Instancia:* {{ .Labels.instance }}
+          
+          *Resumen:* {{ .Annotations.summary }}
+          *Descripción:* {{ .Annotations.description }}
+          
+          {{ if .Annotations.runbook_url }}*📖 Runbook:* <{{ .Annotations.runbook_url }}|Ver procedimiento>{{ end }}
+          ---
+          {{ end }}
+    # Email
+    email_configs:
+      - to: '${CRITICAL_ALERT_EMAIL:-oncall@ats-platform.com}'
+        subject: '🚨 [CRÍTICO] {{ .GroupLabels.alertname }} - ATS Platform'
+        body: |
+          Alertas activas:
+          {{ range .Alerts }}
+          ====================
+          Estado: {{ .Status }}
+          Alerta: {{ .Labels.alertname }}
+          Severidad: {{ .Labels.severity }}
+          Servicio: {{ .Labels.service }}
+          Instancia: {{ .Labels.instance }}
+          
+          Resumen: {{ .Annotations.summary }}
+          Descripción: {{ .Annotations.description }}
+          
+          {{ if .Annotations.runbook_url }}Runbook: {{ .Annotations.runbook_url }}{{ end }}
+          ====================
+          {{ end }}
+
+  # Alertas de seguridad
+  - name: 'security-team'
+    slack_configs:
+      - channel: '#security-alerts'
+        send_resolved: true
+        title: '🔒 Security Alert: {{ .GroupLabels.alertname }}'
+        color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
+        text: |
+          {{ range .Alerts }}
+          *⚠️ ESTADO: {{ .Status | toUpper }}*
+          *Severidad:* {{ .Labels.severity }}
+          *Servicio:* {{ .Labels.service }}
+          
+          *Resumen:* {{ .Annotations.summary }}
+          *Descripción:* {{ .Annotations.description }}
+          ---
+          {{ end }}
+    email_configs:
+      - to: '${SECURITY_EMAIL:-security@ats-platform.com}'
+        subject: '🔒 [SECURITY] {{ .GroupLabels.alertname }} - ATS Platform'
+
+  # Alertas de base de datos
+  - name: 'database-team'
+    slack_configs:
+      - channel: '#database-alerts'
+        send_resolved: true
+        title: '🗄️ Database Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Estado:* {{ .Status }}
+          *Servicio:* {{ .Labels.service }}
+          *Instancia:* {{ .Labels.instance }}
+          
+          *Resumen:* {{ .Annotations.summary }}
+          *Descripción:* {{ .Annotations.description }}
+          ---
+          {{ end }}
+    email_configs:
+      - to: '${DBA_EMAIL:-dba@ats-platform.com}'
+        subject: '🗄️ [DATABASE] {{ .GroupLabels.alertname }} - ATS Platform'
+
+  # Alertas de infraestructura
+  - name: 'infrastructure-team'
+    slack_configs:
+      - channel: '#infrastructure-alerts'
+        send_resolved: true
+        title: '🖥️ Infrastructure Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Estado:* {{ .Status }}
+          *Servicio:* {{ .Labels.service }}
+          *Instancia:* {{ .Labels.instance }}
+          
+          *Resumen:* {{ .Annotations.summary }}
+          *Descripción:* {{ .Annotations.description }}
+          ---
+          {{ end }}
+
+  # Alertas de warning (Slack solamente)
+  - name: 'slack-warnings'
+    slack_configs:
+      - channel: '#alerts-warnings'
+        send_resolved: true
+        title: '⚠️ Warning: {{ .GroupLabels.alertname }}'
+        color: 'warning'
+        text: |
+          {{ range .Alerts }}
+          *Estado:* {{ .Status }}
+          *Severidad:* {{ .Labels.severity }}
+          *Servicio:* {{ .Labels.service }}
+          
+          *Resumen:* {{ .Annotations.summary }}
+          *Descripción:* {{ .Annotations.description }}
+          ---
+          {{ end }}
+
+# Inhibición de alertas (evita spam)
+inhibit_rules:
+  # Si un servicio está caído, inhibir alertas de alto uso de recursos
+  - source_match:
+      severity: 'critical'
+      alertname: 'BackendAPIDown|PostgreSQLDown|RedisDown'
+    target_match:
+      severity: 'warning'
+    equal: ['service', 'instance']
+  
+  # Si PostgreSQL está caído, inhibir alertas de conexiones altas
+  - source_match:
+      alertname: 'PostgreSQLDown'
+    target_match:
+      alertname: 'PostgreSQLHighConnections'
+    equal: ['service']

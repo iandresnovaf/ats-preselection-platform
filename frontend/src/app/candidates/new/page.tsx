@@ -152,7 +152,8 @@ export default function NewCandidatePage() {
 
       const result = await uploadDocument.mutateAsync({
         file,
-        doc_type: "cv",
+        type: "cv",
+        applicationId: "temp",
       });
 
       // If extraction returned data, populate form

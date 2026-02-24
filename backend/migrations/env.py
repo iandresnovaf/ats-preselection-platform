@@ -13,7 +13,16 @@ import sys
 sys.path.append(".")
 from app.core.config import settings
 from app.core.database import Base
-from app.models import User, Configuration, JobOpening, Candidate, Evaluation, CandidateDecision, Communication, AuditLog
+from app.models import (
+    User, Configuration, JobOpening, Candidate, Evaluation, 
+    CandidateDecision, Communication, AuditLog
+)
+# Importar modelos Core ATS para autogeneración
+from app.models.core_ats import (
+    HHCandidate, HHClient, HHRole, HHApplication, HHDocument,
+    HHInterview, HHAssessment, HHAssessmentScore, HHFlag, HHAuditLog,
+    HHCVProcessing, HHCVVersion, HHCVProcessingLog
+)
 
 # this is the Alembic Config object
 config = context.config

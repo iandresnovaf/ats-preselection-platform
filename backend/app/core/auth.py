@@ -1,17 +1,20 @@
 """Autenticación JWT con protección contra timing attacks."""
 import secrets
+import uuid as uuid_module
 from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.token_blacklist import token_blacklist
 
 # Import directo para evitar circular imports
 # User y UserStatus se importan localmente donde se usan
@@ -76,7 +79,7 @@ def generate_secure_token(length: int = 32) -> str:
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """Crear token JWT de acceso."""
+    """Crear token JWT de acceso con JTI para invalidación."""
     to_encode = data.copy()
     
     if expires_delta:
@@ -84,16 +87,33 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     
-    to_encode.update({"exp": expire, "type": "access"})
+    # Generar JTI único para poder invalidar el token
+    jti = str(uuid_module.uuid4())
+    
+    to_encode.update({
+        "exp": expire, 
+        "type": "access",
+        "jti": jti,
+        "iat": datetime.utcnow()
+    })
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
 
 def create_refresh_token(data: dict) -> str:
-    """Crear token JWT de refresh."""
+    """Crear token JWT de refresh con JTI para invalidación."""
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    
+    # Generar JTI único
+    jti = str(uuid_module.uuid4())
+    
+    to_encode.update({
+        "exp": expire, 
+        "type": "refresh",
+        "jti": jti,
+        "iat": datetime.utcnow()
+    })
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
@@ -103,7 +123,7 @@ def decode_token(token: str) -> Optional[dict]:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         return payload
-    except JWTError:
+    except PyJWTError:
         return None
 
 
@@ -128,9 +148,21 @@ async def get_current_user(
     
     user_id: str = payload.get("sub")
     token_type: str = payload.get("type")
+    token_jti: str = payload.get("jti")
+    token_iat = payload.get("iat")
     
     if user_id is None or token_type != "access":
         raise credentials_exception
+    
+    # Verificar si el token está en la blacklist
+    if token_jti:
+        is_blacklisted = await token_blacklist.is_blacklisted(token_jti)
+        if is_blacklisted:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token invalidado",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     
     # Buscar usuario
     result = await db.execute(select(User).where(User.id == user_id))
@@ -138,6 +170,16 @@ async def get_current_user(
     
     if user is None:
         raise credentials_exception
+    
+    # Verificar si el usuario fue revocado globalmente
+    iat_datetime = datetime.fromtimestamp(token_iat) if token_iat else None
+    is_revoked = await token_blacklist.is_user_revoked(user_id, iat_datetime)
+    if is_revoked:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión revocada. Por favor inicia sesión nuevamente.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     if user.status != UserStatus.ACTIVE:
         raise HTTPException(
@@ -173,9 +215,21 @@ async def get_current_user_from_cookie(
     
     user_id: str = payload.get("sub")
     token_type: str = payload.get("type")
+    token_jti: str = payload.get("jti")
+    token_iat = payload.get("iat")
     
     if user_id is None or token_type != "access":
         raise credentials_exception
+    
+    # Verificar si el token está en la blacklist
+    if token_jti:
+        is_blacklisted = await token_blacklist.is_blacklisted(token_jti)
+        if is_blacklisted:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token invalidado",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
     
     # Buscar usuario
     result = await db.execute(select(User).where(User.id == user_id))
@@ -183,6 +237,16 @@ async def get_current_user_from_cookie(
     
     if user is None:
         raise credentials_exception
+    
+    # Verificar si el usuario fue revocado globalmente
+    iat_datetime = datetime.fromtimestamp(token_iat) if token_iat else None
+    is_revoked = await token_blacklist.is_user_revoked(user_id, iat_datetime)
+    if is_revoked:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesión revocada. Por favor inicia sesión nuevamente.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     
     if user.status != UserStatus.ACTIVE:
         raise HTTPException(

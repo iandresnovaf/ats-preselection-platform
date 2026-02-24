@@ -1,0 +1,88 @@
+# Dependabot configuration
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # ==================== Backend (Python) ====================
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "python"
+      - "security"
+    reviewers:
+      - "team-backend"
+    commit-message:
+      prefix: "[PIP]"
+      include: "scope"
+    # Ignorar actualizaciones de versión mayor que puedan romper
+    ignore:
+      - dependency-name: "sqlalchemy"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pydantic"
+        update-types: ["version-update:semver-major"]
+
+  # ==================== Frontend (npm) ====================
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "security"
+    reviewers:
+      - "team-frontend"
+    commit-message:
+      prefix: "[NPM]"
+      include: "scope"
+    # Agrupar actualizaciones de desarrollo
+    groups:
+      dev-dependencies:
+        patterns:
+          - "@types/*"
+          - "eslint*"
+          - "jest*"
+          - "@testing-library/*"
+
+  # ==================== GitHub Actions ====================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "[GHA]"
+      include: "scope"
+
+  # ==================== Docker ====================
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    target-branch: "develop"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "[DOCKER]"
+      include: "scope"

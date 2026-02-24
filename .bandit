@@ -1,0 +1,29 @@
+# Configuración de Bandit para SAST
+# https://bandit.readthedocs.io/en/latest/config.html
+
+skips:
+  # Permitir assert en tests
+  - B101
+  # random usado intencionalmente
+  - B311
+
+assert_used:
+  skipped_files:
+    - "*/tests/*"
+    - "*/test_*.py"
+    - "*/conftest.py"
+    - "*/venv/*"
+    - "*/node_modules/*"
+
+# Excluir directorios
+exclude_dirs:
+  - tests
+  - venv
+  - __pycache__
+  - node_modules
+  - .git
+  - .pytest_cache
+  - .mypy_cache
+  - htmlcov
+  - dist
+  - build

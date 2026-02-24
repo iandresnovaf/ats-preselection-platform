@@ -1,0 +1,106 @@
+# ============================================
+# ATS Platform - Production Dependencies
+# ============================================
+# Instalar con: pip install -r requirements-production.txt
+# ============================================
+
+# ============================================
+# Web Framework & Server
+# ============================================
+fastapi>=0.115.0
+uvicorn[standard]==0.27.0
+python-multipart>=0.0.9
+email-validator==2.1.0
+
+# ============================================
+# Database
+# ============================================
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# ============================================
+# Caching & Message Queue
+# ============================================
+redis==5.0.1
+celery==5.3.6
+
+# ============================================
+# Authentication & Security
+# ============================================
+PyJWT==2.8.0
+passlib==1.7.4
+cryptography>=43.0.0
+slowapi==0.1.9
+
+# ============================================
+# 2FA Support
+# ============================================
+pyotp==2.9.0
+qrcode==7.4.2
+pillow==10.2.0
+
+# ============================================
+# Configuration & Validation
+# ============================================
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# ============================================
+# HTTP Client
+# ============================================
+httpx==0.26.0
+requests>=2.31.0
+
+# ============================================
+# AI Integration (OpenAI)
+# ============================================
+openai==1.10.0
+
+# ============================================
+# Document Processing
+# ============================================
+pdfplumber==0.10.4
+python-docx==1.1.0
+textblob==0.17.1
+chardet==5.2.0
+
+# ============================================
+# Observability (Optional - can be disabled)
+# ============================================
+prometheus-client==0.19.0
+psutil==5.9.8
+
+# OpenTelemetry - Optional, only if OTEL_ENABLED=true
+# If not needed, comment these lines or set OTEL_ENABLED=false
+opentelemetry-api==1.22.0
+opentelemetry-sdk==1.22.0
+opentelemetry-instrumentation-fastapi==0.43b0
+opentelemetry-exporter-otlp-proto-grpc==1.22.0
+opentelemetry-propagator-b3==1.22.0
+
+# ============================================
+# Background Processing
+# ============================================
+# Celery already listed above
+# Additional workers may need:
+# flower==2.0.1  # Optional: Celery monitoring UI
+
+# ============================================
+# NOTAS IMPORTANTES PARA PRODUCCIÓN:
+# ============================================
+# 1. Si NO usa Loki/Jaeger, configure:
+#    OTEL_ENABLED=false
+#    LOKI_ENABLED=false
+#
+# 2. Para instalar SIN dependencias de observabilidad:
+#    pip install -r requirements-production.txt --no-deps
+#    pip install fastapi uvicorn sqlalchemy asyncpg psycopg2-binary alembic
+#    pip install redis celery PyJWT passlib cryptography slowapi
+#    pip install pyotp qrcode pillow pydantic pydantic-settings python-dotenv
+#    pip install httpx requests openai pdfplumber python-docx textblob chardet
+#    pip install prometheus-client psutil
+#
+# 3. Verifique versiones compatibles antes de actualizar

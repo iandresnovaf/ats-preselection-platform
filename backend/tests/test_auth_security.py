@@ -4,7 +4,7 @@ Verifica que la implementación de autenticación sea segura.
 """
 import pytest
 import re
-from jose import jwt
+import jwt
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from unittest.mock import patch

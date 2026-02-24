@@ -1,0 +1,297 @@
+# Reglas de alerta para ATS Platform
+groups:
+  # ==========================================
+  # Alertas de Disponibilidad (Críticas)
+  # ==========================================
+  - name: availability
+    interval: 10s
+    rules:
+      # Backend API caído
+      - alert: BackendAPIDown
+        expr: up{job="ats-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: backend
+          team: platform
+        annotations:
+          summary: "Backend API está caído"
+          description: "El servicio backend de ATS Platform no responde desde hace más de 1 minuto."
+          runbook_url: "https://wiki.internal/ats/runbooks/backend-down"
+
+      # Base de datos PostgreSQL caída
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0 or absent(up{job="postgres"})
+        for: 30s
+        labels:
+          severity: critical
+          service: database
+          team: platform
+        annotations:
+          summary: "PostgreSQL está caído"
+          description: "La base de datos PostgreSQL no está respondiendo."
+
+      # Redis caído
+      - alert: RedisDown
+        expr: up{job="redis"} == 0 or absent(up{job="redis"})
+        for: 30s
+        labels:
+          severity: critical
+          service: cache
+          team: platform
+        annotations:
+          summary: "Redis está caído"
+          description: "El servidor Redis no está respondiendo. Las sesiones y caché pueden estar afectadas."
+
+      # Alta tasa de errores HTTP 5xx
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          service: backend
+          team: platform
+        annotations:
+          summary: "Alta tasa de errores 5xx"
+          description: "La tasa de errores HTTP 5xx es {{ $value | humanizePercentage }} en los últimos 5 minutos."
+
+  # ==========================================
+  # Alertas de Rendimiento (Warning)
+  # ==========================================
+  - name: performance
+    interval: 30s
+    rules:
+      # Latencia alta en API
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: backend
+          team: platform
+        annotations:
+          summary: "Latencia alta en API"
+          description: "El percentil 95 de latencia es {{ $value }}s, superando el umbral de 2s."
+
+      # Tiempo de respuesta de base de datos alto
+      - alert: SlowDatabaseQueries
+        expr: |
+          avg(rate(postgresql_stat_database_blks_time[5m])) > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+          team: platform
+        annotations:
+          summary: "Consultas lentas en base de datos"
+          description: "El tiempo promedio de consultas en PostgreSQL es alto."
+
+      # Conexiones a PostgreSQL altas
+      - alert: PostgreSQLHighConnections
+        expr: |
+          postgresql_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+          team: platform
+        annotations:
+          summary: "Alto número de conexiones a PostgreSQL"
+          description: "PostgreSQL tiene {{ $value }} conexiones activas (>80)."
+
+      # Memoria de Redis alta
+      - alert: RedisHighMemory
+        expr: |
+          redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: cache
+          team: platform
+        annotations:
+          summary: "Uso alto de memoria en Redis"
+          description: "Redis está usando {{ $value | humanizePercentage }} de su memoria máxima."
+
+  # ==========================================
+  # Alertas de Recursos del Sistema
+  # ==========================================
+  - name: system_resources
+    interval: 30s
+    rules:
+      # Uso alto de CPU
+      - alert: HighCPUUsage
+        expr: |
+          100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          service: system
+          team: infrastructure
+        annotations:
+          summary: "Uso alto de CPU"
+          description: "El uso de CPU es {{ $value }}% durante más de 10 minutos."
+
+      # Uso alto de memoria
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes
+          ) / node_memory_MemTotal_bytes * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: system
+          team: infrastructure
+        annotations:
+          summary: "Uso alto de memoria"
+          description: "El uso de memoria es {{ $value }}% durante más de 10 minutos."
+
+      # Disco casi lleno
+      - alert: DiskSpaceRunningOut
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/"} /
+            node_filesystem_size_bytes{mountpoint="/"}
+          ) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: system
+          team: infrastructure
+        annotations:
+          summary: "Espacio en disco bajo"
+          description: "Solo queda {{ $value | humanizePercentage }} de espacio libre en disco."
+
+      # Inodos casi agotados
+      - alert: InodesRunningOut
+        expr: |
+          node_filesystem_files_free{mountpoint="/"} / node_filesystem_files{mountpoint="/"} < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: system
+          team: infrastructure
+        annotations:
+          summary: "Inodos disponibles bajos"
+          description: "Quedan pocos inodos disponibles en el sistema de archivos."
+
+  # ==========================================
+  # Alertas de Cola de Celery
+  # ==========================================
+  - name: celery
+    interval: 30s
+    rules:
+      # Tareas encoladas creciendo
+      - alert: CeleryQueueGrowing
+        expr: |
+          celery_queue_length > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: celery
+          team: platform
+        annotations:
+          summary: "Cola de Celery creciendo"
+          description: "Hay {{ $value }} tareas pendientes en la cola de Celery."
+
+      # Workers inactivos
+      - alert: CeleryWorkersDown
+        expr: |
+          celery_worker_up < 1
+        for: 2m
+        labels:
+          severity: critical
+          service: celery
+          team: platform
+        annotations:
+          summary: "Workers de Celery caídos"
+          description: "No hay workers de Celery activos."
+
+      # Tareas fallidas
+      - alert: CeleryHighFailureRate
+        expr: |
+          (
+            rate(celery_task_failed_total[10m])
+            /
+            rate(celery_task_total[10m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: celery
+          team: platform
+        annotations:
+          summary: "Alta tasa de fallos en tareas"
+          description: "{{ $value | humanizePercentage }} de las tareas de Celery están fallando."
+
+  # ==========================================
+  # Alertas de Seguridad
+  # ==========================================
+  - name: security
+    interval: 30s
+    rules:
+      # Múltiples intentos de login fallidos
+      - alert: HighFailedLoginAttempts
+        expr: |
+          increase(http_requests_total{status="401",path=~"/api/v1/auth/.*"}[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          service: backend
+          team: security
+        annotations:
+          summary: "Múltiples intentos de login fallidos"
+          description: "Se detectaron {{ $value }} intentos de autenticación fallidos."
+
+      # Posible ataque de fuerza bruta
+      - alert: PossibleBruteForceAttack
+        expr: |
+          increase(http_requests_total{status="429"}[1m]) > 20
+        for: 1m
+        labels:
+          severity: critical
+          service: backend
+          team: security
+        annotations:
+          summary: "Posible ataque de fuerza bruta"
+          description: "Múltiples respuestas 429 (rate limit) detectadas. Posible ataque."
+
+  # ==========================================
+  # Alertas de SSL/TLS (si se monitorean endpoints externos)
+  # ==========================================
+  - name: ssl
+    interval: 1h
+    rules:
+      # Certificado SSL por expirar
+      - alert: SSLCertificateExpiring
+        expr: |
+          ssl_cert_not_after - time() < 86400 * 7
+        for: 0m
+        labels:
+          severity: warning
+          service: ssl
+          team: infrastructure
+        annotations:
+          summary: "Certificado SSL por expirar"
+          description: "El certificado SSL expira en menos de 7 días."
+
+      # Certificado SSL expirado
+      - alert: SSLCertificateExpired
+        expr: |
+          ssl_cert_not_after - time() < 0
+        for: 0m
+        labels:
+          severity: critical
+          service: ssl
+          team: infrastructure
+        annotations:
+          summary: "Certificado SSL expirado"
+          description: "El certificado SSL ha expirado."

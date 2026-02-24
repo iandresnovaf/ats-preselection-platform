@@ -1,0 +1,78 @@
+# Datasource configuration for Grafana
+# Este archivo configura automáticamente los datasources al iniciar Grafana
+
+apiVersion: 1
+
+datasources:
+  # Prometheus - Métricas
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: "2.48.0"
+      cacheLevel: 'High'
+      incrementalQuerying: true
+      incrementalQueryRefId: A
+
+  # Loki - Logs
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: "TraceID"
+          matcherRegex: "trace_id=(\\w+)"
+          url: "$$${__value.raw}"
+          datasourceUid: "tempo"
+
+  # Tempo - Traces (opcional, para futura implementación)
+  # - name: Tempo
+  #   type: tempo
+  #   access: proxy
+  #   url: http://tempo:3200
+  #   editable: false
+
+  # Alertmanager
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: true
+
+  # PostgreSQL - Métricas de BD (opcional, si se instala postgres_exporter)
+  # - name: PostgreSQL
+  #   type: postgres
+  #   access: proxy
+  #   url: postgres:5432
+  #   database: ats_platform
+  #   user: postgres
+  #   secureJsonData:
+  #     password: '${POSTGRES_PASSWORD}'
+  #   jsonData:
+  #     sslmode: disable
+  #     maxOpenConns: 100
+  #     maxIdleConns: 100
+  #     maxIdleConnsAuto: true
+  #     connMaxLifetime: 14400
+  #     postgresVersion: 1500
+  #     timescaledb: false
+
+  # Redis - Métricas de cache (opcional, si se instala redis_exporter)
+  # - name: Redis
+  #   type: redis-datasource
+  #   access: proxy
+  #   url: redis://redis:6379
+  #   editable: false

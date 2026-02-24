@@ -1,0 +1,49 @@
+# Dashboard providers configuration
+# Configura dónde Grafana busca los dashboards
+
+apiVersion: 1
+
+providers:
+  # Provider para dashboards de infraestructura
+  - name: 'Infrastructure'
+    orgId: 1
+    folder: 'Infrastructure'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/infrastructure
+
+  # Provider para dashboards de aplicación
+  - name: 'Application'
+    orgId: 1
+    folder: 'Application'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/application
+
+  # Provider para dashboards de negocio
+  - name: 'Business'
+    orgId: 1
+    folder: 'Business'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/business
+
+  # Provider para dashboards por defecto
+  - name: 'Default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/default

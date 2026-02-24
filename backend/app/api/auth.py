@@ -31,6 +31,8 @@ from app.schemas import (
     MessageResponse,
 )
 from app.services.user_service import UserService
+from app.services.mfa_service import MFAService
+from app.models import UserRole
 
 # Logger de seguridad
 security_logger = SecurityLogger()
@@ -104,6 +106,8 @@ async def login(
     
     return {
         "success": True,
+        "access_token": access_token,
+        "token_type": "bearer",
         "user": {
             "id": str(user.id),
             "email": user.email,
@@ -275,16 +279,53 @@ async def logout(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Logout - limpia las cookies httpOnly."""
-    # Leer refresh_token de cookie para logging
+    """Logout - invalida tokens y limpia las cookies httpOnly."""
+    from app.core.token_blacklist import token_blacklist
+    from datetime import datetime
+    
+    # Leer tokens de cookies
+    access_token_str = request.cookies.get("access_token")
     refresh_token_str = request.cookies.get("refresh_token")
     
+    user_id = None
+    
+    # Invalidar access token
+    if access_token_str:
+        payload = decode_token(access_token_str)
+        if payload:
+            user_id = payload.get("sub")
+            token_jti = payload.get("jti")
+            exp = payload.get("exp")
+            
+            if token_jti and exp:
+                expires_at = datetime.utcfromtimestamp(exp)
+                await token_blacklist.add_to_blacklist(
+                    token_jti=token_jti,
+                    expires_at=expires_at,
+                    user_id=user_id,
+                    reason="logout"
+                )
+    
+    # Invalidar refresh token
     if refresh_token_str:
         payload = decode_token(refresh_token_str)
         if payload:
-            user_id = payload.get("sub")
-            if user_id:
-                await security_logger.log_logout(request, user_id)
+            user_id = payload.get("sub") or user_id
+            token_jti = payload.get("jti")
+            exp = payload.get("exp")
+            
+            if token_jti and exp:
+                expires_at = datetime.utcfromtimestamp(exp)
+                await token_blacklist.add_to_blacklist(
+                    token_jti=token_jti,
+                    expires_at=expires_at,
+                    user_id=user_id,
+                    reason="logout"
+                )
+    
+    # Loggear logout
+    if user_id:
+        await security_logger.log_logout(request, user_id)
     
     # Limpiar cookies
     response.delete_cookie(key="access_token", path="/")
@@ -429,3 +470,228 @@ async def reset_password(
     await user_service.update_password(user_id, data.new_password)
     
     return {"message": "Contraseña actualizada exitosamente", "success": True}
+
+
+# =============================================================================
+# MFA ENDPOINTS
+# =============================================================================
+
+@router.post("/mfa/setup")
+async def mfa_setup(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Iniciar configuración de MFA.
+    Genera secret TOTP y códigos de respaldo.
+    """
+    from app.core.auth import get_current_user_from_cookie
+    
+    user = await get_current_user_from_cookie(request, db)
+    
+    # Generar setup MFA
+    setup_data = await MFAService.setup_mfa(user, db)
+    
+    await security_logger.log_security_event(
+        request=request,
+        event_type="mfa_setup_initiated",
+        user_id=str(user.id),
+        details={"email": user.email}
+    )
+    
+    return {
+        "success": True,
+        "message": "Configuración de MFA iniciada. Guarda los códigos de respaldo de forma segura.",
+        "data": {
+            "secret": setup_data["secret"],
+            "qr_code_uri": setup_data["qr_code_uri"],
+            "qr_code_image": setup_data["qr_code_image"],
+            "backup_codes": setup_data["backup_codes"],
+        }
+    }
+
+
+@router.post("/mfa/verify")
+async def mfa_verify(
+    request: Request,
+    token: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Verificar código TOTP y habilitar MFA.
+    """
+    from app.core.auth import get_current_user_from_cookie
+    
+    user = await get_current_user_from_cookie(request, db)
+    
+    # Limpiar token
+    token = token.strip().replace(" ", "")
+    
+    # Verificar y habilitar
+    success = await MFAService.verify_and_enable_mfa(user, token, db)
+    
+    if not success:
+        await security_logger.log_security_event(
+            request=request,
+            event_type="mfa_verification_failed",
+            user_id=str(user.id),
+            details={"email": user.email}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código de verificación inválido. Asegúrate de usar el código correcto de tu app de autenticación."
+        )
+    
+    await security_logger.log_security_event(
+        request=request,
+        event_type="mfa_enabled",
+        user_id=str(user.id),
+        details={"email": user.email}
+    )
+    
+    return {
+        "success": True,
+        "message": "MFA habilitado exitosamente"
+    }
+
+
+@router.post("/mfa/disable")
+async def mfa_disable(
+    request: Request,
+    password: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Deshabilitar MFA.
+    Requiere contraseña para confirmar.
+    """
+    from app.core.auth import get_current_user_from_cookie
+    
+    current_user = await get_current_user_from_cookie(request, db)
+    
+    # Deshabilitar MFA (siempre sobre el usuario actual)
+    success = await MFAService.disable_mfa(
+        user=current_user,
+        password=password,
+        current_user=current_user,
+        db=db
+    )
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se pudo deshabilitar MFA. Verifica tu contraseña."
+        )
+    
+    await security_logger.log_security_event(
+        request=request,
+        event_type="mfa_disabled",
+        user_id=str(current_user.id),
+        details={"email": current_user.email}
+    )
+    
+    return {
+        "success": True,
+        "message": "MFA deshabilitado exitosamente"
+    }
+
+
+@router.get("/mfa/status")
+async def mfa_status(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Obtener estado de MFA del usuario actual.
+    """
+    from app.core.auth import get_current_user_from_cookie
+    
+    user = await get_current_user_from_cookie(request, db)
+    
+    return {
+        "success": True,
+        "data": {
+            "mfa_enabled": user.mfa_enabled,
+            "requires_mfa": MFAService.requires_mfa(user),
+            "role": user.role.value
+        }
+    }
+
+
+@router.post("/login/mfa")
+@limiter.limit("3/minute")
+async def login_mfa(
+    request: Request,
+    email: str,
+    password: str,
+    mfa_token: str,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Login con verificación MFA.
+    Para usuarios que tienen MFA habilitado.
+    """
+    # Autenticar usuario
+    user = await authenticate_user(db, email, password, request=request)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if user.status.value != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuario inactivo. Contacte al administrador.",
+        )
+    
+    # Verificar MFA
+    mfa_valid = await MFAService.verify_mfa_login(user, mfa_token)
+    
+    if not mfa_valid:
+        await security_logger.log_login_attempt(
+            request, email, success=False, user_id=str(user.id), 
+            reason="Código MFA inválido"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Código de autenticación inválido",
+        )
+    
+    # Generar tokens
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id)},
+        expires_delta=access_token_expires,
+    )
+    
+    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    
+    # Setear cookies httpOnly
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        **COOKIE_SETTINGS
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        **COOKIE_SETTINGS
+    )
+    
+    return {
+        "success": True,
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "status": user.status.value,
+            "mfa_enabled": user.mfa_enabled,
+        }
+    }

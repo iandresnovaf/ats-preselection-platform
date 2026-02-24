@@ -1,6 +1,7 @@
 """Rate limiting middleware mejorado con protección por usuario e IP."""
 import time
 import hashlib
+from datetime import datetime
 from typing import Optional, Dict, Tuple
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
@@ -19,6 +20,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         requests_per_minute: int = 60,
         auth_requests_per_minute: int = 5,
         login_requests_per_minute: int = 3,  # Más restrictivo para login
+        password_reset_per_hour: int = 1,    # 1 intento por hora
+        candidates_post_per_minute: int = 10, # 10 candidatos por minuto
         user_requests_per_minute: int = 100,  # Límite por usuario autenticado
     ):
         super().__init__(app)
@@ -26,6 +29,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.requests_per_minute = requests_per_minute
         self.auth_requests_per_minute = auth_requests_per_minute
         self.login_requests_per_minute = login_requests_per_minute
+        self.password_reset_per_hour = password_reset_per_hour
+        self.candidates_post_per_minute = candidates_post_per_minute
         self.user_requests_per_minute = user_requests_per_minute
         self._redis: Optional[redis.Redis] = None
         
@@ -54,6 +59,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             # Extraer sub del token sin verificar (solo para rate limiting)
             try:
                 import jwt
+                from jwt.exceptions import PyJWTError
                 token = auth_header.split(" ")[1]
                 payload = jwt.decode(
                     token, 
@@ -83,6 +89,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         """Verifica si es un endpoint de autenticación."""
         auth_paths = [
             "/api/v1/auth/login",
+            "/api/v1/auth/login/mfa",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
         ]
@@ -91,6 +98,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def is_login_endpoint(self, path: str) -> bool:
         """Verifica si es el endpoint de login (más restrictivo)."""
         return path.startswith("/api/v1/auth/login")
+    
+    def is_password_reset_endpoint(self, path: str) -> bool:
+        """Verifica si es endpoint de reset password (muy restrictivo)."""
+        return path.startswith("/api/v1/auth/forgot-password") or path.startswith("/api/v1/auth/reset-password")
+    
+    def is_candidates_post_endpoint(self, path: str, method: str) -> bool:
+        """Verifica si es POST a /api/v1/candidates (rate limit específico)."""
+        return method == "POST" and path.startswith("/api/v1/candidates")
     
     async def check_rate_limit(
         self, 
@@ -180,7 +195,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         
         # Determinar límites según el endpoint
         if self.is_login_endpoint(path):
-            # Login es más restrictivo
+            # Login: 3 intentos por minuto
             limit = self.login_requests_per_minute
             window = 60
             key_prefix = "ratelimit:login"
@@ -200,6 +215,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     }
                 )
                 
+        elif self.is_password_reset_endpoint(path):
+            # Password reset: 1 intento por hora (muy restrictivo)
+            limit = self.password_reset_per_hour
+            window = 3600  # 1 hora
+            key_prefix = "ratelimit:password_reset"
+            
+        elif self.is_candidates_post_endpoint(path, request.method):
+            # POST /candidates: 10 por minuto
+            limit = self.candidates_post_per_minute
+            window = 60
+            key_prefix = "ratelimit:candidates_post"
+            
         elif self.is_auth_endpoint(path):
             limit = self.auth_requests_per_minute
             window = 60
@@ -328,3 +355,149 @@ class RateLimitByUser:
             pass
         
         return None
+
+
+class ProgressiveBlocker:
+    """
+    Bloqueo progresivo por IP basado en número de violaciones.
+    Implementa backoff exponencial para IPs maliciosas.
+    """
+    
+    # Ventanas de bloqueo en segundos (progresivo)
+    BLOCK_DURATIONS = [300, 900, 3600, 86400]  # 5min, 15min, 1hr, 24hr
+    
+    def __init__(self):
+        self.key_prefix = "progressive_block"
+    
+    async def get_redis(self) -> redis.Redis:
+        return redis.from_url(settings.REDIS_URL, decode_responses=True)
+    
+    async def record_violation(self, ip: str, reason: str = "rate_limit") -> int:
+        """
+        Registra una violación y retorna el nivel de bloqueo.
+        
+        Returns:
+            Número de violaciones acumuladas
+        """
+        try:
+            r = await self.get_redis()
+            key = f"{self.key_prefix}:violations:{ip}"
+            
+            current = await r.incr(key)
+            if current == 1:
+                # Expirar después de 24 horas
+                await r.expire(key, 86400)
+            
+            # Registrar timestamp de la violación
+            timestamp_key = f"{self.key_prefix}:timestamps:{ip}"
+            await r.zadd(timestamp_key, {str(datetime.utcnow().timestamp()): datetime.utcnow().timestamp()})
+            await r.expire(timestamp_key, 86400)
+            
+            await r.close()
+            return current
+            
+        except Exception:
+            return 0
+    
+    async def get_block_duration(self, ip: str) -> int:
+        """
+        Calcula la duración de bloqueo basada en violaciones previas.
+        
+        Returns:
+            Segundos de bloqueo
+        """
+        try:
+            r = await self.get_redis()
+            key = f"{self.key_prefix}:violations:{ip}"
+            
+            violations = int(await r.get(key) or 0)
+            await r.close()
+            
+            # Determinar duración basada en nivel
+            if violations == 0:
+                return 0
+            
+            level = min(violations - 1, len(self.BLOCK_DURATIONS) - 1)
+            return self.BLOCK_DURATIONS[level]
+            
+        except Exception:
+            return 300  # Default 5 minutos
+    
+    async def is_blocked(self, ip: str) -> Tuple[bool, int]:
+        """
+        Verifica si una IP está bloqueada.
+        
+        Returns:
+            Tuple de (está_bloqueada, segundos_restantes)
+        """
+        try:
+            r = await self.get_redis()
+            key = f"{self.key_prefix}:block:{ip}"
+            
+            ttl = await r.ttl(key)
+            await r.close()
+            
+            if ttl > 0:
+                return True, ttl
+            return False, 0
+            
+        except Exception:
+            return False, 0
+    
+    async def block_ip(self, ip: str, duration: Optional[int] = None) -> bool:
+        """
+        Bloquea una IP por la duración especificada o calculada.
+        
+        Args:
+            ip: IP a bloquear
+            duration: Duración en segundos (opcional)
+        
+        Returns:
+            True si se bloqueó
+        """
+        try:
+            if duration is None:
+                duration = await self.get_block_duration(ip)
+            
+            r = await self.get_redis()
+            key = f"{self.key_prefix}:block:{ip}"
+            
+            await r.setex(key, duration, "blocked")
+            await r.close()
+            
+            return True
+            
+        except Exception:
+            return False
+    
+    async def reset_violations(self, ip: str) -> bool:
+        """Resetea el contador de violaciones de una IP."""
+        try:
+            r = await self.get_redis()
+            
+            await r.delete(f"{self.key_prefix}:violations:{ip}")
+            await r.delete(f"{self.key_prefix}:timestamps:{ip}")
+            await r.delete(f"{self.key_prefix}:block:{ip}")
+            
+            await r.close()
+            return True
+            
+        except Exception:
+            return False
+
+
+# Singleton
+progressive_blocker = ProgressiveBlocker()
+
+
+async def check_progressive_block(ip: str) -> Tuple[bool, int]:
+    """Verifica si una IP está bloqueada progresivamente."""
+    return await progressive_blocker.is_blocked(ip)
+
+
+async def apply_progressive_block(ip: str) -> int:
+    """Aplica bloqueo progresivo y retorna duración."""
+    await progressive_blocker.record_violation(ip)
+    duration = await progressive_blocker.get_block_duration(ip)
+    await progressive_blocker.block_ip(ip, duration)
+    return duration

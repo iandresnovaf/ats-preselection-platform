@@ -4,7 +4,7 @@ These are critical security tests.
 """
 import pytest
 from datetime import timedelta
-from jose import jwt
+import jwt
 
 from app.core.auth import (
     verify_password,

@@ -38,6 +38,11 @@ class User(Base):
     role = Column(SQLEnum(UserRole), nullable=False, default=UserRole.CONSULTANT)
     status = Column(SQLEnum(UserStatus), nullable=False, default=UserStatus.PENDING)
     
+    # MFA - Multi-Factor Authentication
+    mfa_secret = Column(String(255), nullable=True)  # Secret TOTP encriptado
+    mfa_enabled = Column(Boolean, default=False)
+    mfa_backup_codes = Column(JSON, nullable=True)  # Lista de códigos de respaldo hasheados
+    
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -94,6 +99,16 @@ from app.models.communication import (
 # Importar modelos Core ATS (nuevo modelo de datos)
 # NOTA: Usar directamente desde app.models.core_ats para evitar conflictos
 # Ejemplo: from app.models.core_ats import Candidate as HHCandidate
+
+# Importar modelos de procesamiento de CVs desde core_ats
+from app.models.core_ats import (
+    ExtractionMethod,
+    ProcessingStatus,
+    CVVersionStatus,
+    HHCVProcessing,
+    HHCVVersion,
+    HHCVProcessingLog
+)
 
 
 class CandidateDecision(Base):
